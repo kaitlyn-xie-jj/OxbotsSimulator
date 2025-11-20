@@ -4,6 +4,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
 EXTERNPROTO "../protos/UnibotsArena.proto"
 EXTERNPROTO "../protos/UnibotsBalls.proto"
+EXTERNPROTO "../protos/PingBall.proto"
+EXTERNPROTO "../protos/SteelBall.proto"
 
 WorldInfo {
 }
@@ -58,4 +60,11 @@ UnibotsBalls {
   hidden translation_37 0.14 0.6 0.00994815661687241
   hidden translation_38 0.42 0.6 0.00994815661687241
   hidden translation_39 0.7 0.6 0.00994815661687241
+}
+
+Robot {
+  name "RandomSpawner"
+  controller "random_ball_spawner"
+  supervisor TRUE
+  translation 0 0 0.1
 }

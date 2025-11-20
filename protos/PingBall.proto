@@ -1,0 +1,15 @@
+#VRML_SIM R2025a utf8
+PROTO PingBall [ field SFVec3f translation 0 0 0.02 ] {
+  Solid {
+    translation IS translation
+    children [
+      Shape {
+        appearance PBRAppearance { baseColor 1.0 0.953 0.008 metalness 0 roughness 1 }
+        geometry Sphere { radius 0.02 }
+      }
+    ]
+    name "PingBall"
+    boundingObject Sphere { radius 0.02 }
+    physics Physics { density 50 }
+  }
+}

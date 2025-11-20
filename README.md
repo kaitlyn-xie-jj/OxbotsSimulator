@@ -90,3 +90,28 @@ worlds/Run.wbt
 	•	Positioned according to the PROTO configuration 
 ```
 
+## 4. Recommended C++ Build Setup (MacOS - Apple Silicon)
+
+Because Webots resolves controller API symbols at **runtime**, the recommended way to build a C++ controller on macOS (especially Apple Silicon) is to allow the linker to resolve Webots API symbols dynamically:
+
+```
+CXX = clang++
+CXXFLAGS = -std=c++17 -O2 -Wall
+
+WEBOTS_HOME ?= /Applications/Webots.app
+
+INCLUDE = -I"$(WEBOTS_HOME)/Contents/include/controller/cpp"
+LIBDIR  = -L"$(WEBOTS_HOME)/Contents/lib/controller"
+
+# NOTE: Allow runtime symbol resolution for Webots API
+LDFLAGS = -Wl,-undefined,dynamic_lookup
+
+TARGET = random_ball_spawner
+
+all:
+	$(CXX) $(CXXFLAGS) $(INCLUDE) %file name%.cpp $(LIBDIR) $(LDFLAGS) -o $(TARGET)
+
+clean:
+	rm -f $(TARGET)
+```
+
