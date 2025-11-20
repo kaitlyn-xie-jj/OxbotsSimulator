@@ -1,0 +1,430 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+
+WorldInfo {
+  basicTimeStep 8
+}
+Viewpoint {
+  orientation 0.2349508069305798 0.17651213180977715 -0.9558460051946848 1.8960380454755439
+  position 1.0623512864922358 3.8423386371605415 2.1890510946858415
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+Solid {
+  translation 0 0 -0.01
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 1 1
+        }
+      }
+      geometry Box {
+        size 2 2 0.02
+      }
+    }
+  ]
+  name "Floor"
+  boundingObject Box {
+    size 2 2 0.02
+  }
+}
+Solid {
+  translation 0 1.01 0.075
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0 0
+        }
+      }
+      geometry Box {
+        size 2 0.02 0.15
+      }
+    }
+  ]
+  name "NorthWall"
+  boundingObject Box {
+    size 2 0.02 0.15
+  }
+}
+Solid {
+  translation 0 -1.01 0.075
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0 0
+        }
+      }
+      geometry Box {
+        size 2 0.02 0.15
+      }
+    }
+  ]
+  name "SouthWall"
+  boundingObject Box {
+    size 2 0.02 0.15
+  }
+}
+Solid {
+  translation 1.01 0 0.075
+  rotation 0 0 1 -1.5707953071795862
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0 0
+        }
+      }
+      geometry Box {
+        size 2 0.02 0.15
+      }
+    }
+  ]
+  name "EastWall"
+  boundingObject Box {
+    size 2 0.02 0.15
+  }
+}
+Solid {
+  translation -1.01 0 0.075
+  rotation 0 0 1 -1.5707953071795862
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0 0
+        }
+      }
+      geometry Box {
+        size 2 0.02 0.15
+      }
+    }
+  ]
+  name "WestWall"
+  boundingObject Box {
+    size 2 0.02 0.15
+  }
+}
+Solid {
+  translation -1.23 0 0.075
+  rotation 0 0 1 -1.5707953071795862
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.2 0.647 0.318
+        }
+      }
+      geometry Box {
+        size 0.76 0.02 0.15
+      }
+    }
+  ]
+  name "WestNet1"
+  boundingObject Box {
+    size 0.76 0.02 0.15
+  }
+}
+Solid {
+  translation -1.12 0.39 0.075
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.2 0.647 0.318
+        }
+      }
+      geometry Box {
+        size 0.2 0.02 0.15
+      }
+    }
+  ]
+  name "WestNet2"
+  boundingObject Box {
+    size 0.2 0.02 0.15
+  }
+}
+Solid {
+  translation -1.12 -0.39 0.075
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.2 0.647 0.318
+        }
+      }
+      geometry Box {
+        size 0.2 0.02 0.15
+      }
+    }
+  ]
+  name "WestNet3"
+  boundingObject Box {
+    size 0.2 0.02 0.15
+  }
+}
+Solid {
+  translation -1.12 0 -0.01
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.2 0.647 0.318
+        }
+      }
+      geometry Box {
+        size 0.2 0.76 0.02
+      }
+    }
+  ]
+  name "WestNet4"
+  boundingObject Box {
+    size 0.2 0.76 0.02
+  }
+}
+Solid {
+  translation 0 1.23 0.075
+  rotation 0 0 1 -3.141592653589793
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.953 0.008
+        }
+      }
+      geometry Box {
+        size 0.76 0.02 0.15
+      }
+    }
+  ]
+  name "NorthNet1"
+  boundingObject Box {
+    size 0.76 0.02 0.15
+  }
+}
+Solid {
+  translation 0.39 1.12 0.075
+  rotation 0 0 1 -1.5707963267948966
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.953 0.008
+        }
+      }
+      geometry Box {
+        size 0.2 0.02 0.15
+      }
+    }
+  ]
+  name "NorthNet2"
+  boundingObject Box {
+    size 0.2 0.02 0.15
+  }
+}
+Solid {
+  translation -0.39 1.12 0.075
+  rotation 0 0 1 -1.5707963267948966
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.953 0.008
+        }
+      }
+      geometry Box {
+        size 0.2 0.02 0.15
+      }
+    }
+  ]
+  name "NorthNet3"
+  boundingObject Box {
+    size 0.2 0.02 0.15
+  }
+}
+Solid {
+  translation 0 1.12 -0.01
+  rotation 0 0 1 -1.5707963267948966
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.953 0.008
+        }
+      }
+      geometry Box {
+        size 0.2 0.76 0.02
+      }
+    }
+  ]
+  name "NorthNet4"
+  boundingObject Box {
+    size 0.2 0.76 0.02
+  }
+}
+Solid {
+  translation 1.23 0 0.075
+  rotation 0 0 1 -4.71238898038469
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.949 0.396 0.133
+        }
+      }
+      geometry Box {
+        size 0.76 0.02 0.15
+      }
+    }
+  ]
+  name "EastNet1"
+  boundingObject Box {
+    size 0.76 0.02 0.15
+  }
+}
+Solid {
+  translation 1.12 -0.39 0.075
+  rotation 0 0 1 -3.141592653589793
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.949 0.396 0.133
+        }
+      }
+      geometry Box {
+        size 0.2 0.02 0.15
+      }
+    }
+  ]
+  name "EastNet2"
+  boundingObject Box {
+    size 0.2 0.02 0.15
+  }
+}
+Solid {
+  translation 1.12 0.39 0.075
+  rotation 0 0 1 -3.141592653589793
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.949 0.396 0.133
+        }
+      }
+      geometry Box {
+        size 0.2 0.02 0.15
+      }
+    }
+  ]
+  name "EastNet3"
+  boundingObject Box {
+    size 0.2 0.02 0.15
+  }
+}
+Solid {
+  translation 1.12 0 -0.01
+  rotation 0 0 1 -3.141592653589793
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.949 0.396 0.133
+        }
+      }
+      geometry Box {
+        size 0.2 0.76 0.02
+      }
+    }
+  ]
+  name "EastNet4"
+  boundingObject Box {
+    size 0.2 0.76 0.02
+  }
+}
+Solid {
+  translation 0 -1.23 0.075
+  rotation 0 0 1 -6.283185307179586
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.4 0.176 0.569
+        }
+      }
+      geometry Box {
+        size 0.76 0.02 0.15
+      }
+    }
+  ]
+  name "SouthNet1"
+  boundingObject Box {
+    size 0.76 0.02 0.15
+  }
+}
+Solid {
+  translation -0.39 -1.12 0.075
+  rotation 0 0 1 -4.71238898038469
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.4 0.176 0.569
+        }
+      }
+      geometry Box {
+        size 0.2 0.02 0.15
+      }
+    }
+  ]
+  name "SouthNet2"
+  boundingObject Box {
+    size 0.2 0.02 0.15
+  }
+}
+Solid {
+  translation 0.39 -1.12 0.075
+  rotation 0 0 1 -4.71238898038469
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.4 0.176 0.569
+        }
+      }
+      geometry Box {
+        size 0.2 0.02 0.15
+      }
+    }
+  ]
+  name "SouthNet3"
+  boundingObject Box {
+    size 0.2 0.02 0.15
+  }
+}
+Solid {
+  translation 0 -1.12 -0.01
+  rotation 0 0 1 -4.71238898038469
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.4 0.176 0.569
+        }
+      }
+      geometry Box {
+        size 0.2 0.76 0.02
+      }
+    }
+  ]
+  name "SouthNet4"
+  boundingObject Box {
+    size 0.2 0.76 0.02
+  }
+}
