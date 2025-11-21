@@ -7,46 +7,46 @@ PROTO UnibotsBallsRandom [] {
     children [
 
 
-      PingBall { translation 0.691252 -0.286210 0.15 rotation -0.758405 -0.590501 -0.275918 5.475513 }
-      PingBall { translation 0.811353 0.763809 0.15 rotation -0.277119 -0.791157 -0.545230 3.600288 }
-      PingBall { translation -0.035280 -0.150307 0.15 rotation -0.677061 0.716626 -0.167439 3.942754 }
-      PingBall { translation 0.358866 -0.789338 0.15 rotation -0.631401 0.645666 -0.429475 0.487080 }
-      PingBall { translation -0.141220 0.411024 0.15 rotation -0.280004 -0.660419 -0.696738 1.490999 }
-      PingBall { translation -0.254407 0.493276 0.15 rotation 0.410756 -0.602005 -0.684741 3.368388 }
-      PingBall { translation -0.283647 -0.525480 0.15 rotation -0.751648 0.526388 -0.397418 3.165414 }
-      PingBall { translation -0.330432 0.633579 0.15 rotation 0.960079 0.262412 -0.096895 1.194251 }
-      PingBall { translation -0.703851 -0.188668 0.15 rotation 0.382594 -0.641503 0.664904 4.521526 }
-      PingBall { translation 0.024916 0.748205 0.15 rotation -0.009673 0.931180 0.364432 4.875097 }
-      PingBall { translation 0.414645 -0.480663 0.15 rotation -0.921491 -0.227147 0.315053 2.542877 }
-      PingBall { translation -0.624749 0.029876 0.15 rotation 0.606221 0.329257 0.723938 0.780901 }
-      PingBall { translation 0.700797 -0.163253 0.15 rotation 0.702002 -0.526990 0.479036 0.994928 }
-      PingBall { translation 0.450720 0.032970 0.15 rotation 0.367945 -0.855021 0.365453 6.087926 }
-      PingBall { translation 0.426781 0.377327 0.15 rotation -0.100284 -0.033136 -0.994407 0.937205 }
-      PingBall { translation 0.630197 0.072488 0.15 rotation 0.020039 0.785915 0.618010 3.255082 }
-      SteelBall { translation 0.640833 -0.079372 0.15 rotation -0.590507 -0.184710 -0.785610 4.017206 }
-      SteelBall { translation 0.886530 0.158869 0.15 rotation 0.656090 0.180285 0.732833 4.586235 }
-      SteelBall { translation 0.817575 -0.513715 0.15 rotation 0.735351 -0.178261 -0.653822 2.971154 }
-      SteelBall { translation -0.138508 0.176296 0.15 rotation 0.181719 -0.718098 -0.671798 0.026274 }
-      SteelBall { translation -0.069009 -0.276655 0.15 rotation 0.229964 -0.910878 -0.342662 4.413455 }
-      SteelBall { translation -0.050179 -0.824101 0.15 rotation 0.491047 -0.610238 0.621677 1.317096 }
-      SteelBall { translation 0.586347 -0.529605 0.15 rotation 0.832674 0.301171 -0.464704 3.876266 }
-      SteelBall { translation -0.437270 -0.670847 0.15 rotation 0.478745 0.566137 -0.671038 2.904036 }
-      SteelBall { translation -0.120013 0.856033 0.15 rotation 0.489300 0.515357 0.703557 1.307899 }
-      SteelBall { translation 0.576539 0.689832 0.15 rotation 0.929336 -0.338498 0.147488 4.314859 }
-      SteelBall { translation 0.576594 -0.800699 0.15 rotation -0.090821 -0.159612 0.982993 6.015826 }
-      SteelBall { translation -0.864203 -0.331977 0.15 rotation 0.839721 -0.168099 -0.516345 1.212295 }
-      SteelBall { translation -0.468373 0.494041 0.15 rotation 0.641235 -0.622514 0.448659 0.819273 }
-      SteelBall { translation 0.724934 0.836839 0.15 rotation -0.751733 -0.446028 0.485753 2.126754 }
-      SteelBall { translation 0.389084 -0.832378 0.15 rotation -0.540203 -0.386617 0.747468 1.547385 }
-      SteelBall { translation -0.764732 -0.541400 0.15 rotation -0.755233 -0.495069 -0.429570 5.444710 }
-      SteelBall { translation -0.811426 0.672328 0.15 rotation 0.747268 0.664247 0.019150 1.231432 }
-      SteelBall { translation 0.538504 0.124242 0.15 rotation 0.219118 0.427943 0.876842 0.274440 }
-      SteelBall { translation -0.346885 -0.816306 0.15 rotation 0.087689 0.996148 -0.000174 0.705653 }
-      SteelBall { translation 0.688844 -0.809742 0.15 rotation 0.318070 -0.452720 -0.832992 3.187060 }
-      SteelBall { translation -0.326989 0.535835 0.15 rotation 0.733052 -0.144730 -0.664596 3.752112 }
-      SteelBall { translation -0.691037 -0.456074 0.15 rotation -0.585606 0.514277 -0.626565 1.789187 }
-      SteelBall { translation 0.766764 0.343927 0.15 rotation -0.660803 0.546628 -0.514331 0.789022 }
-      SteelBall { translation 0.712119 -0.851748 0.15 rotation -0.977123 0.040519 0.208778 6.067076 }
+      DEF PING01 PingBall { solidName "PING01_solid_random" translation -0.375913 0.031753 0.150000 rotation -0.212506 0.689780 -0.692131 4.789301 }
+      DEF PING02 PingBall { solidName "PING02_solid_random" translation -0.479668 0.070677 0.150000 rotation 0.764391 -0.363180 0.532735 1.896240 }
+      DEF PING03 PingBall { solidName "PING03_solid_random" translation -0.167051 -0.471426 0.150000 rotation 0.630206 -0.241078 0.738053 2.163595 }
+      DEF PING04 PingBall { solidName "PING04_solid_random" translation -0.767270 -0.030862 0.150000 rotation -0.428986 -0.691785 -0.580865 0.458593 }
+      DEF PING05 PingBall { solidName "PING05_solid_random" translation -0.879799 -0.817541 0.150000 rotation 0.657328 0.176545 -0.732634 6.215554 }
+      DEF PING06 PingBall { solidName "PING06_solid_random" translation 0.032598 -0.071662 0.150000 rotation -0.532833 -0.146197 -0.833496 3.622968 }
+      DEF PING07 PingBall { solidName "PING07_solid_random" translation 0.670421 -0.222951 0.150000 rotation -0.958744 0.213975 -0.187151 0.405417 }
+      DEF PING08 PingBall { solidName "PING08_solid_random" translation -0.339324 0.655356 0.150000 rotation -0.351460 0.648297 -0.675416 4.813477 }
+      DEF PING09 PingBall { solidName "PING09_solid_random" translation 0.446263 0.739601 0.150000 rotation -0.575041 -0.817847 -0.021314 2.425548 }
+      DEF PING10 PingBall { solidName "PING10_solid_random" translation 0.138900 0.135021 0.150000 rotation 0.585369 -0.487745 0.647648 5.305385 }
+      DEF PING11 PingBall { solidName "PING11_solid_random" translation -0.190312 0.659469 0.150000 rotation -0.762027 0.615125 -0.202328 4.817402 }
+      DEF PING12 PingBall { solidName "PING12_solid_random" translation -0.055097 -0.345390 0.150000 rotation 0.638926 -0.064247 0.766581 1.193794 }
+      DEF PING13 PingBall { solidName "PING13_solid_random" translation -0.575246 -0.123636 0.150000 rotation -0.279672 0.909163 0.308556 0.158571 }
+      DEF PING14 PingBall { solidName "PING14_solid_random" translation -0.048688 0.024914 0.150000 rotation 0.522339 -0.238006 0.818850 2.057408 }
+      DEF PING15 PingBall { solidName "PING15_solid_random" translation 0.875621 -0.860065 0.150000 rotation -0.681797 -0.633115 0.366495 3.034740 }
+      DEF PING16 PingBall { solidName "PING16_solid_random" translation -0.436040 -0.056232 0.150000 rotation -0.625315 -0.270006 -0.732174 0.547609 }
+      DEF STEEL01 SteelBall { solidName "STEEL01_solid_random" translation -0.400092 0.896609 0.150000 rotation -0.055221 -0.932225 0.357640 2.893630 }
+      DEF STEEL02 SteelBall { solidName "STEEL02_solid_random" translation -0.768816 -0.180200 0.150000 rotation -0.540597 0.840929 -0.024349 2.433686 }
+      DEF STEEL03 SteelBall { solidName "STEEL03_solid_random" translation 0.661053 -0.758984 0.150000 rotation 0.679634 -0.712669 0.173783 1.469804 }
+      DEF STEEL04 SteelBall { solidName "STEEL04_solid_random" translation 0.698007 0.755006 0.150000 rotation -0.730800 0.150063 -0.665892 0.295914 }
+      DEF STEEL05 SteelBall { solidName "STEEL05_solid_random" translation 0.064415 0.424911 0.150000 rotation 0.707862 -0.407464 -0.576979 6.044219 }
+      DEF STEEL06 SteelBall { solidName "STEEL06_solid_random" translation -0.719403 -0.508084 0.150000 rotation 0.431250 -0.103823 0.896239 1.001022 }
+      DEF STEEL07 SteelBall { solidName "STEEL07_solid_random" translation 0.515171 0.599798 0.150000 rotation 0.591844 -0.728707 0.344538 6.070652 }
+      DEF STEEL08 SteelBall { solidName "STEEL08_solid_random" translation -0.850490 -0.548129 0.150000 rotation -0.532074 0.257205 0.806686 0.385243 }
+      DEF STEEL09 SteelBall { solidName "STEEL09_solid_random" translation -0.619825 0.594088 0.150000 rotation -0.074070 -0.626355 0.776011 1.517185 }
+      DEF STEEL10 SteelBall { solidName "STEEL10_solid_random" translation 0.441811 -0.508156 0.150000 rotation -0.474543 0.545784 -0.690600 3.889443 }
+      DEF STEEL11 SteelBall { solidName "STEEL11_solid_random" translation -0.360590 0.054451 0.150000 rotation -0.305609 0.662918 0.683478 2.650021 }
+      DEF STEEL12 SteelBall { solidName "STEEL12_solid_random" translation -0.408191 -0.850004 0.150000 rotation 0.136673 0.079941 0.987385 4.819203 }
+      DEF STEEL13 SteelBall { solidName "STEEL13_solid_random" translation 0.860933 -0.698369 0.150000 rotation -0.373684 0.535834 -0.757128 0.700393 }
+      DEF STEEL14 SteelBall { solidName "STEEL14_solid_random" translation 0.484699 -0.600585 0.150000 rotation 0.581218 0.550981 0.598837 5.245109 }
+      DEF STEEL15 SteelBall { solidName "STEEL15_solid_random" translation 0.464335 -0.475498 0.150000 rotation 0.346045 -0.827830 0.441532 1.074071 }
+      DEF STEEL16 SteelBall { solidName "STEEL16_solid_random" translation 0.248797 0.679466 0.150000 rotation -0.685652 0.709699 -0.161895 2.952765 }
+      DEF STEEL17 SteelBall { solidName "STEEL17_solid_random" translation 0.064923 0.090618 0.150000 rotation -0.192027 -0.509786 -0.838596 4.000209 }
+      DEF STEEL18 SteelBall { solidName "STEEL18_solid_random" translation -0.189330 -0.139364 0.150000 rotation -0.359717 -0.273245 0.892155 1.119438 }
+      DEF STEEL19 SteelBall { solidName "STEEL19_solid_random" translation 0.118224 0.586131 0.150000 rotation 0.648266 -0.480391 0.590741 0.353705 }
+      DEF STEEL20 SteelBall { solidName "STEEL20_solid_random" translation 0.245362 0.003114 0.150000 rotation 0.813564 -0.569999 0.114955 0.212828 }
+      DEF STEEL21 SteelBall { solidName "STEEL21_solid_random" translation -0.621391 0.190863 0.150000 rotation -0.454126 0.684876 -0.569837 5.098512 }
+      DEF STEEL22 SteelBall { solidName "STEEL22_solid_random" translation 0.735421 0.334578 0.150000 rotation -0.940327 0.262352 -0.216693 4.050771 }
+      DEF STEEL23 SteelBall { solidName "STEEL23_solid_random" translation 0.151727 0.740235 0.150000 rotation -0.855709 -0.475342 0.204482 3.567539 }
+      DEF STEEL24 SteelBall { solidName "STEEL24_solid_random" translation -0.868296 -0.362595 0.150000 rotation 0.651392 -0.720407 0.238124 5.700829 }
 
     ]
   }

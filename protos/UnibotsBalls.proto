@@ -7,55 +7,55 @@ PROTO UnibotsBalls [
   Group {
     children [
 
-      # ---- 16 Ping-pong balls (each freely movable / rotatable) ----
-      PingBall { translation -0.375 -0.375 0.15 }
-      PingBall { translation -0.375 -0.125 0.15 }
-      PingBall { translation -0.375  0.125 0.15 }
-      PingBall { translation -0.375  0.375 0.15 }
+      # ---- 16 Ping-pong balls ----
+      DEF PING01 PingBall { solidName "PING01_solid" translation -0.375 -0.375 0.15 }
+      DEF PING02 PingBall { solidName "PING02_solid" translation -0.375 -0.125 0.15 }
+      DEF PING03 PingBall { solidName "PING03_solid" translation -0.375  0.125 0.15 }
+      DEF PING04 PingBall { solidName "PING04_solid" translation -0.375  0.375 0.15 }
 
-      PingBall { translation -0.125 -0.375 0.15 }
-      PingBall { translation -0.125 -0.125 0.15 }
-      PingBall { translation -0.125  0.125 0.15 }
-      PingBall { translation -0.125  0.375 0.15 }
+      DEF PING05 PingBall { solidName "PING05_solid" translation -0.125 -0.375 0.15 }
+      DEF PING06 PingBall { solidName "PING06_solid" translation -0.125 -0.125 0.15 }
+      DEF PING07 PingBall { solidName "PING07_solid" translation -0.125  0.125 0.15 }
+      DEF PING08 PingBall { solidName "PING08_solid" translation -0.125  0.375 0.15 }
 
-      PingBall { translation 0.125 -0.375 0.15 }
-      PingBall { translation 0.125 -0.125 0.15 }
-      PingBall { translation 0.125  0.125 0.15 }
-      PingBall { translation 0.125  0.375 0.15 }
+      DEF PING09 PingBall { solidName "PING09_solid" translation 0.125 -0.375 0.15 }
+      DEF PING10 PingBall { solidName "PING10_solid" translation 0.125 -0.125 0.15 }
+      DEF PING11 PingBall { solidName "PING11_solid" translation 0.125  0.125 0.15 }
+      DEF PING12 PingBall { solidName "PING12_solid" translation 0.125  0.375 0.15 }
 
-      PingBall { translation 0.375 -0.375 0.15 }
-      PingBall { translation 0.375 -0.125 0.15 }
-      PingBall { translation 0.375  0.125 0.15 }
-      PingBall { translation 0.375  0.375 0.15 }
+      DEF PING13 PingBall { solidName "PING13_solid" translation 0.375 -0.375 0.15 }
+      DEF PING14 PingBall { solidName "PING14_solid" translation 0.375 -0.125 0.15 }
+      DEF PING15 PingBall { solidName "PING15_solid" translation 0.375  0.125 0.15 }
+      DEF PING16 PingBall { solidName "PING16_solid" translation 0.375  0.375 0.15 }
 
-      # ---- 24 steel balls ----
-      SteelBall { translation -0.70 -0.60 0.15 }
-      SteelBall { translation -0.42 -0.60 0.15 }
-      SteelBall { translation -0.14 -0.60 0.15 }
-      SteelBall { translation  0.14 -0.60 0.15 }
-      SteelBall { translation  0.42 -0.60 0.15 }
-      SteelBall { translation  0.70 -0.60 0.15 }
+      # ---- 24 Steel balls ----
+      DEF STEEL01 SteelBall { solidName "STEEL01_solid" translation -0.70 -0.60 0.15 }
+      DEF STEEL02 SteelBall { solidName "STEEL02_solid" translation -0.42 -0.60 0.15 }
+      DEF STEEL03 SteelBall { solidName "STEEL03_solid" translation -0.14 -0.60 0.15 }
+      DEF STEEL04 SteelBall { solidName "STEEL04_solid" translation  0.14 -0.60 0.15 }
+      DEF STEEL05 SteelBall { solidName "STEEL05_solid" translation  0.42 -0.60 0.15 }
+      DEF STEEL06 SteelBall { solidName "STEEL06_solid" translation  0.70 -0.60 0.15 }
 
-      SteelBall { translation -0.70 -0.20 0.15 }
-      SteelBall { translation -0.42 -0.20 0.15 }
-      SteelBall { translation -0.14 -0.20 0.15 }
-      SteelBall { translation  0.14 -0.20 0.15 }
-      SteelBall { translation  0.42 -0.20 0.15 }
-      SteelBall { translation  0.70 -0.20 0.15 }
+      DEF STEEL07 SteelBall { solidName "STEEL07_solid" translation -0.70 -0.20 0.15 }
+      DEF STEEL08 SteelBall { solidName "STEEL08_solid" translation -0.42 -0.20 0.15 }
+      DEF STEEL09 SteelBall { solidName "STEEL09_solid" translation -0.14 -0.20 0.15 }
+      DEF STEEL10 SteelBall { solidName "STEEL10_solid" translation  0.14 -0.20 0.15 }
+      DEF STEEL11 SteelBall { solidName "STEEL11_solid" translation  0.42 -0.20 0.15 }
+      DEF STEEL12 SteelBall { solidName "STEEL12_solid" translation  0.70 -0.20 0.15 }
 
-      SteelBall { translation -0.70 0.20 0.15 }
-      SteelBall { translation -0.42 0.20 0.15 }
-      SteelBall { translation -0.14 0.20 0.15 }
-      SteelBall { translation  0.14 0.20 0.15 }
-      SteelBall { translation  0.42 0.20 0.15 }
-      SteelBall { translation  0.70 0.20 0.15 }
+      DEF STEEL13 SteelBall { solidName "STEEL13_solid" translation -0.70 0.20 0.15 }
+      DEF STEEL14 SteelBall { solidName "STEEL14_solid" translation -0.42 0.20 0.15 }
+      DEF STEEL15 SteelBall { solidName "STEEL15_solid" translation -0.14 0.20 0.15 }
+      DEF STEEL16 SteelBall { solidName "STEEL16_solid" translation  0.14 0.20 0.15 }
+      DEF STEEL17 SteelBall { solidName "STEEL17_solid" translation  0.42 0.20 0.15 }
+      DEF STEEL18 SteelBall { solidName "STEEL18_solid" translation  0.70 0.20 0.15 }
 
-      SteelBall { translation -0.70 0.60 0.15 }
-      SteelBall { translation -0.42 0.60 0.15 }
-      SteelBall { translation -0.14 0.60 0.15 }
-      SteelBall { translation  0.14 0.60 0.15 }
-      SteelBall { translation  0.42 0.60 0.15 }
-      SteelBall { translation  0.70 0.60 0.15 }
+      DEF STEEL19 SteelBall { solidName "STEEL19_solid" translation -0.70 0.60 0.15 }
+      DEF STEEL20 SteelBall { solidName "STEEL20_solid" translation -0.42 0.60 0.15 }
+      DEF STEEL21 SteelBall { solidName "STEEL21_solid" translation -0.14 0.60 0.15 }
+      DEF STEEL22 SteelBall { solidName "STEEL22_solid" translation  0.14 0.60 0.15 }
+      DEF STEEL23 SteelBall { solidName "STEEL23_solid" translation  0.42 0.60 0.15 }
+      DEF STEEL24 SteelBall { solidName "STEEL24_solid" translation  0.70 0.60 0.15 }
 
     ]
   }
