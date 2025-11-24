@@ -3,10 +3,11 @@
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
 EXTERNPROTO "../protos/UnibotsArena.proto"
-EXTERNPROTO "../protos/UnibotsBalls.proto"
 EXTERNPROTO "../protos/UnibotsBallsRandom.proto"
+EXTERNPROTO "../protos/AprilTagWall.proto"
 
 WorldInfo {
+  basicTimeStep 4
 }
 Viewpoint {
   orientation -0.2960062093607238 0.29898291670585697 0.9071877090977114 1.6580947095129914
@@ -20,3 +21,4 @@ UnibotsArena {
 }
 UnibotsBallsRandom {
 }
+AprilTagWall { }

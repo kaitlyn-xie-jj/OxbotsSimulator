@@ -1,0 +1,23 @@
+#VRML_SIM R2025a utf8
+PROTO AprilTag [
+  field MFString textureFile ["Protos/Textures/tag36h11/tag36h11-0.png"]
+  field SFVec3f translation 0 0 0
+  field SFRotation rotation 0 1 0 0
+] {
+  Transform {
+    translation IS translation
+    rotation IS rotation
+    children [
+      Shape {
+        appearance Appearance {
+          texture ImageTexture {
+            url IS textureFile
+          }
+        }
+        geometry Box {
+          size 0.10 0.001 0.10
+        }
+      }
+    ]
+  }
+}
