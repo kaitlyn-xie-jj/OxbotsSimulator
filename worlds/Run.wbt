@@ -3,15 +3,15 @@
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
 EXTERNPROTO "../protos/UnibotsArena.proto"
-EXTERNPROTO "../protos/UnibotsBallsRandom.proto"
 EXTERNPROTO "../protos/AprilTagWall.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
 
 WorldInfo {
   basicTimeStep 4
 }
 Viewpoint {
-  orientation -0.2960062093607238 0.29898291670585697 0.9071877090977114 1.6580947095129914
-  position -0.032592430168865955 -3.199183638296202 2.3028339327022516
+  orientation -0.25156483901171295 0.250938638704908 0.9347432435583254 1.6407262463443355
+  position 0.15679855983768737 -3.9006383784693788 2.2582435225474375
 }
 TexturedBackground {
 }
@@ -19,6 +19,12 @@ TexturedBackgroundLight {
 }
 UnibotsArena {
 }
-UnibotsBallsRandom {
+AprilTagWall {
 }
-AprilTagWall { }
+E-puck {
+  hidden rotation_1 0 1 0 3.6975914409710358
+  hidden rotation_2 0 1 0 2.2188913759074667
+  controller "epuck_camera_reader"
+  camera_width 640
+  camera_height 480
+}

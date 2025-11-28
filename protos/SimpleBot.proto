@@ -1,0 +1,29 @@
+#VRML_SIM R2025a utf8
+PROTO SimpleBot [
+  field SFString  name "simple_bot"
+]
+{
+  Robot {
+    name IS name
+    translation 0 0.03 0
+    children [
+      Solid {
+        translation 0 0 0
+        children [
+          Shape {
+            appearance PBRAppearance { }
+            geometry Box { size 0.18 0.12 0.12 } # 正方体机身，外形仅示例
+          }
+        ]
+        boundingObject Box { size 0.18 0.12 0.12 }
+      }
+    ]
+    controller "my_matlab_ctrl"    # controller 名字
+    # 添加传感器/电机等设备（示例）
+    devices [
+      Motor { name "left_wheel" },
+      Motor { name "right_wheel" },
+      Camera { name "camera", width 640, height 480, recognition FALSE }
+    ]
+  }
+}
