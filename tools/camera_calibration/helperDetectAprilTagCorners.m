@@ -20,11 +20,11 @@ for idx = 1:numImages
     I = readimage(imdsCalib,idx);
     [tagIds,tagLocs] = readAprilTag(I,tagFamily);
 
-    % figure;imshow(I); hold on
-    % % ---- Draw markers on detected tag corners ----
-    % for drawing_idx = 1:length(tagIds)
-    %     plot(tagLocs(:,1,drawing_idx),tagLocs(:,2,drawing_idx),"ro-",MarkerSize=15)
-    % end
+    figure;imshow(I); hold on
+    % ---- Draw markers on detected tag corners ----
+    for drawing_idx = 1:length(tagIds)
+        plot(tagLocs(:,1,drawing_idx),tagLocs(:,2,drawing_idx),"ro-",MarkerSize=15)
+    end
 
     % Accept images if all tags are detected.
     if numel(tagIds) == numTags

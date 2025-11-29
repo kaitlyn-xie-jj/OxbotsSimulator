@@ -130,6 +130,15 @@ showExtrinsics(params)
 % Read a sample calibration image.
 I = readimage(imdsCalib,10);
 
+% Insert markers for the detected and reprojected points.
+J3 = I;
+J3 = insertMarker(J3,imagePoints(:,:,10),"x",MarkerColor="g",Size=50);
+J3 = insertMarker(J3,params.ReprojectedPoints(:,:,10),"x",MarkerColor="r",Size=50);
+
+% Display the image.
+figure
+imshow(J3)
+
 % Undistort using default output view.
 J1 = undistortImage(I,params);
 figure; imshowpair(I,J1,'montage');
