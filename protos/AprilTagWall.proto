@@ -22,15 +22,15 @@ PROTO AprilTagWall [
         translation -0.25 1 0.075
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/0.png"]
+        textureFile ["../textures/arena_tag/3.png"]
         translation 0.25 1 0.075
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/1.png"]
+        textureFile ["../textures/arena_tag/4.png"]
         translation 0.55 1 0.075
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/2.png"]
+        textureFile ["../textures/arena_tag/5.png"]
         translation 0.85 1 0.075
       }
 
@@ -72,27 +72,27 @@ PROTO AprilTagWall [
       # South Wall Apriltag
       # -------------------
       AprilTag {
-        textureFile ["../textures/arena_tag/12.png"]
+        textureFile ["../textures/arena_tag/17.png"]
         translation -0.85 -1 0.075
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/13.png"]
+        textureFile ["../textures/arena_tag/16.png"]
         translation -0.55 -1 0.075
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/14.png"]
+        textureFile ["../textures/arena_tag/15.png"]
         translation -0.25 -1 0.075
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/15.png"]
+        textureFile ["../textures/arena_tag/14.png"]
         translation 0.25 -1 0.075
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/16.png"]
+        textureFile ["../textures/arena_tag/13.png"]
         translation 0.55 -1 0.075
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/17.png"]
+        textureFile ["../textures/arena_tag/12.png"]
         translation 0.85 -1 0.075
       }
 
@@ -100,32 +100,32 @@ PROTO AprilTagWall [
       # West Wall Apriltag
       # -------------------
       AprilTag {
-        textureFile ["../textures/arena_tag/18.png"]
+        textureFile ["../textures/arena_tag/23.png"]
         translation -1 0.85 0.075
         rotation 0 0 1 1.5708
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/19.png"]
+        textureFile ["../textures/arena_tag/22.png"]
         translation -1 0.55 0.075
         rotation 0 0 1 1.5708
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/20.png"]
+        textureFile ["../textures/arena_tag/21.png"]
         translation -1 0.25 0.075
         rotation 0 0 1 1.5708
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/21.png"]
+        textureFile ["../textures/arena_tag/20.png"]
         translation -1 -0.25 0.075
         rotation 0 0 1 1.5708
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/22.png"]
+        textureFile ["../textures/arena_tag/19.png"]
         translation -1 -0.55 0.075
         rotation 0 0 1 1.5708
       }
       AprilTag {
-        textureFile ["../textures/arena_tag/23.png"]
+        textureFile ["../textures/arena_tag/18.png"]
         translation -1 -0.85 0.075
         rotation 0 0 1 1.5708
       }

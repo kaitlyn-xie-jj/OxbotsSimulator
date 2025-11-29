@@ -18,7 +18,7 @@ wb_motor_set_position(right_motor, inf);
 
 % set up the motor speeds at 10% of the MAX_SPEED.
 wb_motor_set_velocity(left_motor, 0.5 * MAX_SPEED);
-wb_motor_set_velocity(right_motor, 0.3 * MAX_SPEED);
+wb_motor_set_velocity(right_motor, -0.5 * MAX_SPEED);
 
 loop_counter = 0;
 image_file_num = 1;

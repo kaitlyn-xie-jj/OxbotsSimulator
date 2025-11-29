@@ -24,6 +24,7 @@ AprilTagWall {
 E-puck {
   hidden rotation_1 0 1 0 3.6975914409710358
   hidden rotation_2 0 1 0 2.2188913759074667
+  rotation 0 0 1 1.5708
   controller "epuck_camera_reader"
   camera_width 640
   camera_height 480
