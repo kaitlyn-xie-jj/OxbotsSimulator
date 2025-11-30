@@ -823,7 +823,7 @@ Robot {
       }
     %< } >%
     DEF EPUCK_CAMERA Camera {
-      translation 0.03 0 0.1
+      translation 0 0 0.1
       rotation IS camera_rotation
       children [
         Pose {

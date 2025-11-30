@@ -24,7 +24,7 @@ Solid {
   children [
     Shape {
       appearance Appearance {
-        material Material { diffuseColor 0 0 0 }
+        material Material { diffuseColor 1 0.953 0.008 }
       }
       geometry Box { size 2 0.02 0.15 }
     }
@@ -39,7 +39,7 @@ Solid {
   children [
     Shape {
       appearance Appearance {
-        material Material { diffuseColor 0 0 0 }
+        material Material { diffuseColor 0.4 0.176 0.569 }
       }
       geometry Box { size 2 0.02 0.15 }
     }
@@ -55,7 +55,7 @@ Solid {
   children [
     Shape {
       appearance Appearance {
-        material Material { diffuseColor 0 0 0 }
+        material Material { diffuseColor 0.949 0.396 0.133 }
       }
       geometry Box { size 2 0.02 0.15 }
     }
@@ -71,7 +71,7 @@ Solid {
   children [
     Shape {
       appearance Appearance {
-        material Material { diffuseColor 0 0 0 }
+        material Material { diffuseColor 0.02 0.647 0.318 }
       }
       geometry Box { size 2 0.02 0.15 }
     }

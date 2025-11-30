@@ -28,12 +28,22 @@
 % Date:   (Update as needed)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-% Define the folder for storing AprilTag images.
+downloadURL  = "https://github.com/AprilRobotics/apriltag-imgs/archive/master.zip";
 dataFolder   = fullfile(tempdir,"apriltag-imgs",filesep); 
-
-% Set web request options with infinite timeout.
 options      = weboptions('Timeout', Inf);
+zipFileName  = fullfile(dataFolder,"apriltag-imgs-master.zip");
+folderExists = exist(dataFolder,"dir");
+
+% Create a folder in a temporary directory to save the downloaded file.
+if ~folderExists  
+    mkdir(dataFolder); 
+    disp("Downloading apriltag-imgs-master.zip (60.1 MB)...") 
+    websave(zipFileName,downloadURL,options); 
+    
+    % Extract contents of the downloaded file.
+    disp("Extracting apriltag-imgs-master.zip...") 
+    unzip(zipFileName,dataFolder); 
+end
 
 % Define the ZIP file path for the downloaded AprilTag dataset.
 zipFileName  = fullfile(dataFolder,"apriltag-imgs-master.zip");
@@ -99,7 +109,7 @@ imdsCalib = imageDatastore("aprilTagCalibImages/");
 % -------------------------------------------------------------------------
 
 % Define the physical tag size in millimeters.
-tagSize = 40; % mm
+tagSize = 20; % mm
 
 % Generate world coordinates for the checkerboard points.
 worldPoints = patternWorldPoints("checkerboard",boardSize, tagSize);
@@ -128,12 +138,12 @@ showExtrinsics(params)
 % -------------------------------------------------------------------------
 
 % Read a sample calibration image.
-I = readimage(imdsCalib,10);
+I = readimage(imdsCalib,9);
 
 % Insert markers for the detected and reprojected points.
 J3 = I;
-J3 = insertMarker(J3,imagePoints(:,:,10),"x",MarkerColor="g",Size=50);
-J3 = insertMarker(J3,params.ReprojectedPoints(:,:,10),"x",MarkerColor="r",Size=50);
+J3 = insertMarker(J3,imagePoints(:,:,9),"o",MarkerColor="g",Size=5);
+J3 = insertMarker(J3,params.ReprojectedPoints(:,:,9),"x",MarkerColor="r",Size=5);
 
 % Display the image.
 figure
@@ -149,3 +159,5 @@ J2 = undistortImage(I,params,'OutputView','full');
 figure; 
 imshow(J2);
 title('Full Output View');
+
+save('../../controllers/epuck_camera_reader/cameraParams.mat','params','-v7.3');

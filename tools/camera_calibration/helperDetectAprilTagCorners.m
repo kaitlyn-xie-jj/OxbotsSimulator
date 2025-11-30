@@ -1,5 +1,7 @@
 function [imagePoints,boardSize,imagesUsed] = helperDetectAprilTagCorners(imdsCalib,tagArrangement,tagFamily)
 
+show_marked_images = false;
+
 % Get the pattern size from tagArrangement.
 boardSize = tagArrangement*2 + 1;
 
@@ -19,11 +21,13 @@ for idx = 1:numImages
     % Read and detect AprilTags in image.
     I = readimage(imdsCalib,idx);
     [tagIds,tagLocs] = readAprilTag(I,tagFamily);
-
-    figure;imshow(I); hold on
-    % ---- Draw markers on detected tag corners ----
-    for drawing_idx = 1:length(tagIds)
-        plot(tagLocs(:,1,drawing_idx),tagLocs(:,2,drawing_idx),"ro-",MarkerSize=15)
+    
+    if show_marked_images == true
+        figure;imshow(I); hold on
+        % ---- Draw markers on detected tag corners ----
+        for drawing_idx = 1:length(tagIds)
+            plot(tagLocs(:,1,drawing_idx),tagLocs(:,2,drawing_idx),"ro-",MarkerSize=15)
+        end
     end
 
     % Accept images if all tags are detected.
