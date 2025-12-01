@@ -2,7 +2,7 @@ function epuck_camera_reader
 TIME_STEP = 64;
 save_sample_images = false;
 sample_every_frame = 10;
-robot_auto_rotating = false;
+robot_auto_rotating = true;
 
 camera = wb_robot_get_device('camera');
 wb_camera_enable(camera, TIME_STEP);
@@ -21,7 +21,7 @@ if robot_auto_rotating == true
 
   % set up the motor speeds at 10% of the MAX_SPEED.
   wb_motor_set_velocity(left_motor, 0.5 * MAX_SPEED);
-  wb_motor_set_velocity(right_motor, -0.5 * MAX_SPEED);
+  wb_motor_set_velocity(right_motor, 0.4 * MAX_SPEED);
 end
 
 loop_counter = 0;
@@ -38,10 +38,11 @@ while wb_robot_step(TIME_STEP) ~= -1
     success = wb_camera_save_image(camera, '../../cache/camera/temp_img.png', 100);
 
     % Apriltag Recognition for Debugging
-    recognise_image("../../cache/camera/temp_img.png");
+    % recognise_image("../../cache/camera/temp_img.png");
 
     % Current World Coordinates Estimation
-    % estimate_world_coordinates("../../cache/camera/temp_img.png");
+    intrinsics = load("../../controllers/epuck_camera_reader/theoretical_intrinsics_webots.mat");
+    results = estimate_world_coordinates_from_image(intrinsics , "../../cache/camera/temp_img.png");
 
     disp("Frame: " + loop_counter + " Detected and processed.\n");
     loop_counter = loop_counter + 1;
