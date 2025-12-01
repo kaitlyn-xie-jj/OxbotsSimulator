@@ -2,7 +2,7 @@ function epuck_camera_reader
 TIME_STEP = 64;
 save_sample_images = false;
 sample_every_frame = 10;
-robot_auto_rotating = true;
+robot_auto_rotating = false;
 
 camera = wb_robot_get_device('camera');
 wb_camera_enable(camera, TIME_STEP);
