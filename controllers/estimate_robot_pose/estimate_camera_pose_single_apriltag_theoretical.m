@@ -71,6 +71,35 @@ end
 hasEstWorld = exist('estimateWorldCameraPose','file') == 2;
 hasEstWorldPoseNew = exist('estworldpose','file') == 2;
 
+% ----------------- Combine all tag corners and solve once (estworldpose, no constraints) -----------------
+allImgPts = [];    % Nx2 aggregated image points (pixel)
+allWorldPts = [];  % Nx3 aggregated world points (meters)
+tagPointIdx = [];  % which tag each point belongs to (1..N)
+cornerIdx = [];    % which corner index (1..4) per point
+
+for k = 1:N
+    id = ids(k);
+    corners_img = squeeze(loc3(:,:,k)); % 4x2
+    if any(isnan(corners_img(:)))
+        warning('Tag %d: some corners NaN, skipping', id);
+        % continue;
+    end
+    if ~isKey(mapById, id)
+        warning('Tag %d not in tagWorldMap, skipping', id);
+        % continue;
+    end
+    worldCorners = mapById(id); % 4x3, BL,BR,TR,TL
+    
+    % undistort points (preferred) - use simulated cameraParams (no distortion)
+    try
+        ptsUnd = undistortPoints(corners_img, cameraParams); % 4x2
+    catch
+        ptsUnd = corners_img;
+    end
+    allImgPts((k-1)*4+1:k*4, :) = ptsUnd;
+    allWorldPts((k-1)*4+1:k*4, :) = worldCorners;
+end
+
 results = struct([]);
 for k = 1:N
     id = ids(k);
@@ -188,13 +217,14 @@ for k = 1:N
     % reprojection check (project worldCorners -> image pixels) using intr/cameraParams as appropriate
     % proj = worldToImage(intr, orientation, cam_pos, worldCorners);
     tform = rigidtform3d(R_c2w, cam_pos);                           
-    proj = world2img_manual(worldCorners, tform, intr); 
+    proj = world2img_manual(allWorldPts, tform, intr); 
     
-    I = insertShape(I, "Circle", [corners_img, [5;5;5;5]], ShapeColor="red", Opacity=1);
-    I = insertShape(I, "Circle", [proj, [6;6;6;6]], ShapeColor="green", Opacity=1);
+    radcircle = 5 * ones(size(proj, 1), 1);
+    I = insertShape(I, "Circle", [allImgPts, radcircle], ShapeColor="red", Opacity=1);
+    radcircle = 3 * ones(size(proj, 1), 1);
+    I = insertShape(I, "Circle", [proj, radcircle], ShapeColor="green", Opacity=1);
     
-
-    reprojErrs = sqrt(sum((proj - corners_img).^2, 2));
+    reprojErrs = sqrt(sum((proj - allImgPts).^2, 2));
     meanReproj = mean(reprojErrs);
     
     % convert orientation->euler/quaternion for readability (camera-to-world rotation)

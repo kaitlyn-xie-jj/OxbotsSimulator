@@ -328,9 +328,7 @@ function showExtrinsics(results, cameraParams)
         pos = results(i).cam_position_world;
     end
 
-    text(pos(1), pos(2), pos(3), sprintf([ ...
-        'MeanReprojError=%.2fpx, \n Camera Pose X = %.2f, Y = %.2f, Z = %.2f' ], ...
-        results.meanReproj, pos(1), pos(2), pos(3)), 'Color','b');
+    text(pos(1), pos(2), pos(3), sprintf('MeanReprojError=%.2fpx', results.meanReproj), 'Color','b');
 
     % ---------- Enable interactive view controls ----------
     view(3);                         % 3D view

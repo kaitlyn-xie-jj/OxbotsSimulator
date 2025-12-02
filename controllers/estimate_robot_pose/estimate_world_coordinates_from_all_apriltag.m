@@ -140,11 +140,22 @@ T_world_from_cam = eye(4);
 T_world_from_cam(1:3,1:3) = R_c2w;
 T_world_from_cam(1:3,4) = cam_pos';
 
-tform = rigidtform3d(R_c2w, cam_pos);
-projAll = world2img_manual(allWorldPts, tform, intr, true);
-
-reprojErrAll = sqrt(sum((projAll - allImgPts).^2, 2));
-overallMeanReproj = mean(reprojErrAll);
+    % reprojection check (project worldCorners -> image pixels) using intr/cameraParams as appropriate
+    % proj = worldToImage(intr, orientation, cam_pos, worldCorners);
+    tform = rigidtform3d(R_c2w, cam_pos);                           
+    proj = world2img_manual(allWorldPts, tform, intr); 
+    
+    radcircle = 5 * ones(size(proj, 1), 1);
+    I = insertShape(I, "Circle", [allImgPts, radcircle], ShapeColor="red", Opacity=1);
+    radcircle = 3 * ones(size(proj, 1), 1);
+    I = insertShape(I, "Circle", [proj, radcircle], ShapeColor="green", Opacity=1);
+    
+    reprojErrs = sqrt(sum((proj - allImgPts).^2, 2));
+    meanReproj = mean(reprojErrs);
+    
+    % convert orientation->euler/quaternion for readability (camera-to-world rotation)
+    quat = rotm2quat(R_c2w); % [w x y z]
+    eulZYX = rotm2eul(R_c2w, 'ZYX'); % rad
 
 % build per-tag results (reuse measured corners order from loc3)
 results = struct([]);
@@ -157,7 +168,7 @@ for kk = 1:numel(uniqueTags)
     corners_img = squeeze(loc3(:,:,tagIdx)); % 4x2
     % find indices in aggregated arrays
     idxs = find(tagPointIdx == tagIdx);
-    proj_tag = projAll(idxs, :);
+    proj_tag = proj(idxs, :);
     reproj_tag = reprojErrAll(idxs);
     meanReproj_tag = mean(reproj_tag);
     % orientation/location refer to combined solution
@@ -187,11 +198,11 @@ end
 % draw all measured (red) and all projected (green)
 if ~isempty(allImgPts)
     I = insertShape(I, "Circle", [allImgPts, repmat(4,size(allImgPts,1),1)], 'ShapeColor','red','Opacity',1);
-    I = insertShape(I, "Circle", [projAll, repmat(4,size(projAll,1),1)], 'ShapeColor','green','Opacity',1);
+    I = insertShape(I, "Circle", [proj, repmat(4,size(proj,1),1)], 'ShapeColor','green','Opacity',1);
 end
 
 figure; imshow(I); hold off;
-fprintf('Combined-solve using %s. Total points=%d. Overall mean reproj = %.3f px\n', usedMethod, size(allImgPts,1), overallMeanReproj);
+fprintf('Combined-solve using %s. Total points=%d. Overall mean reproj = %.3f px\n', usedMethod, size(allImgPts,1), meanReproj);
 
 % print brief summary
 fprintf('Per-tag (from combined solution) results: %d tags.\n', numel(results));
