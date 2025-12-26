@@ -1,0 +1,72 @@
+#VRML_SIM R2025a utf8
+PROTO UniBotBox [
+  field SFString    name "uni_bot_box"
+  field SFString    controller "uni_bot_controller"
+  field SFVec3f            translation                  0 0 0.1                    # Is `Pose.translation`.
+  field SFRotation         rotation                     0 0 1 0                  # Is `Pose.rotation`.
+] {
+  Robot {
+    controller IS controller
+    name IS name
+    translation IS translation
+    rotation IS rotation
+    boundingObject Box {
+      size 0.20 0.20 0.20
+    }
+    physics Physics {
+      mass 1.5
+    }
+    children [
+      # 视觉外观（简单立方体形状）
+      Shape {
+        appearance Appearance {
+          material Material {
+            diffuseColor 0.6 0.6 0.6
+            specularColor 0.1 0.1 0.1
+          }
+        }
+        geometry Box { size 0.20 0.20 0.20 }
+      }
+
+      # 左侧摄像头（面向 -X 方向）
+      Camera {
+        name "camera_left"
+        width 640
+        height 480
+        fieldOfView 0.87        # ~50 deg
+        near 0.01
+        far 5.0
+        # 放在上表面靠左中间，朝向 -X（旋转按 axis-angle）
+        translation -0.09 0 0.18
+        rotation 0 1 0 1.57079632679   # 绕 Y 轴 90deg，使镜头面朝 -X
+      }
+
+      # 右侧摄像头（面向 +X 方向）
+      Camera {
+        name "camera_right"
+        width 640
+        height 480
+        fieldOfView 0.87
+        near 0.01
+        far 5.0
+        translation 0.09 0 0.18
+        rotation 0 1 0 -1.57079632679  # 绕 Y 轴 -90deg，使镜头面朝 +X
+      }
+
+      # 可选：一个简单的激光/距离传感器点位（如果你需要）
+      DistanceSensor {
+        name "front_ds"
+        translation 0 0 0.12
+        rotation 0 1 0 0
+        lookupTable []
+        # 注意：Webots 需要在 controller 里 enable
+      }
+
+      # 运动底座（示意用——如果你要移动，需要自己替换/加电机）
+      # 这里只建模型外形，具体轮子/驱动请根据你想用的 wheel 节点替换
+    ]
+
+    # 允许在 SceneTree 中旋转/缩放时看到 boundingObject
+    isSolid TRUE
+  }
+}
