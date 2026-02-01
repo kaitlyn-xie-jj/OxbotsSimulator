@@ -8,6 +8,7 @@ import sys
 import subprocess
 
 # ==== Initialization ====
+RANDOM_SEED = 1235
 DEFAULT_VELOCITY = 0.3 # m/s
 DEFAULT_ANGULAR_VELOCITY = 3  # rad/s
 supervisor = Supervisor()
@@ -365,7 +366,7 @@ def monitor_simple_step(ball_prefix="BALL_", ball_count=40, half_x=ABSORB_BOX_HA
 import random, math, numpy as np
 
 # ==== Main logic (randomize balls -> init monitoring -> waypoint queue -> non-blocking main loop) ====
-randomize_balls(seed=1235, ensure_no_overlap=True)
+randomize_balls(seed=RANDOM_SEED, ensure_no_overlap=True)
 monitor_simple_init(ball_prefix=BALL_PREFIX, ball_count=BALL_COUNT)
 
 # waypoints are loaded from the external file controllers/supervisor_controller/dynamic_waypoints.txt
