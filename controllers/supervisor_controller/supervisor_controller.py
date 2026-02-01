@@ -382,6 +382,7 @@ WAYPOINTS_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "waypoints_hist
 WAYPOINT_STATUS_FILE = os.path.join(os.path.dirname(__file__), "waypoint_status.txt")
 BALL_POS_FILE = os.path.join(os.path.dirname(__file__), "ball_position.txt")
 CURRENT_POSITION_FILE = os.path.join(os.path.dirname(__file__), "current_position.txt")
+TIME_FILE = os.path.join(os.path.dirname(__file__), "time.txt")
 
 def _load_dynamic_waypoint(path):
     """Load a single waypoint from dynamic_waypoints.txt (read-only).
@@ -514,6 +515,21 @@ def _write_current_position(path):
         except Exception:
             pass
 
+def _write_webots_time(path):
+    """Write current Webots simulator time to file — overwrite atomically."""
+    try:
+        webots_time = supervisor.getTime()
+        tmp = path + '.tmp'
+        with open(tmp, 'w') as f:
+            f.write(f"{webots_time:.6f}\n")
+        os.replace(tmp, path)
+    except Exception as e:
+        # non-fatal
+        try:
+            print(f"[webots_time] failed to write: {e}")
+        except Exception:
+            pass
+
 motion = MotionController(trans, rot_field, dt)
 
 # Initialize waypoints history with new session header
@@ -579,6 +595,9 @@ while supervisor.step(TIME_STEP) != -1:
     
     # 2.6) Write robot current position to file
     _write_current_position(CURRENT_POSITION_FILE)
+    
+    # 2.7) Write Webots simulator time to file
+    _write_webots_time(TIME_FILE)
 
     # 3) If motion completed, record as 'reached' and wait for next dynamic waypoint
     if not motion.active and current_waypoint is not None:
