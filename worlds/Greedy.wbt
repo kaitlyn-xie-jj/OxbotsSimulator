@@ -271,7 +271,49 @@ DEF BALL_39 SteelBall {
   rotation 0 0 1 0
   robotName "STEELBALL_39"
 }
-DEF OBSTACLE_ROBOT Cube-Robot {
+DEF OBSTACLE_ROBOT_1 Cube-Robot {
+  translation 0 0 0.1
+  topTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  bottomTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  backTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  frontTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  leftTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  rightTextureUrl [
+    "../textures/robot_texture/warning_sign.jpegs"
+  ]
+}
+DEF OBSTACLE_ROBOT_2 Cube-Robot {
+  translation 0 0 0.1
+  topTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  bottomTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  backTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  frontTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  leftTextureUrl [
+    "../textures/robot_texture/warning_sign.jpeg"
+  ]
+  rightTextureUrl [
+    "../textures/robot_texture/warning_sign.jpegs"
+  ]
+}
+DEF OBSTACLE_ROBOT_3 Cube-Robot {
   translation 0 0 0.1
   topTextureUrl [
     "../textures/robot_texture/warning_sign.jpeg"

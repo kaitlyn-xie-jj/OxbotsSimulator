@@ -23,15 +23,22 @@ PING_HIT = 0
 
 # Get robot references
 MAIN_ROBOT_NAME = "MY_ROBOT"
-OBSTACLE_ROBOT_NAME = "OBSTACLE_ROBOT"
+OBSTACLE_ROBOT_NAMES = ["OBSTACLE_ROBOT_1", "OBSTACLE_ROBOT_2", "OBSTACLE_ROBOT_3"]
+OBSTACLE_START_INDICES = [0, 2, 4]  # Starting waypoint indices for each obstacle robot
 
 main_robot = supervisor.getFromDef(MAIN_ROBOT_NAME)
 if main_robot is None:
     print(f"ERROR: DEF {MAIN_ROBOT_NAME} not found in world.")
     sys.exit(1)
 
-obstacle_robot = supervisor.getFromDef(OBSTACLE_ROBOT_NAME)
-# obstacle_robot is optional, will be None if not found
+# Get all obstacle robots
+obstacle_robots = []
+for name in OBSTACLE_ROBOT_NAMES:
+    robot = supervisor.getFromDef(name)
+    if robot is not None:
+        obstacle_robots.append(robot)
+    else:
+        print(f"Warning: DEF {name} not found in world.")
 
 # ==== Utility functions ====
 def _normalize_angle(a):
@@ -133,10 +140,12 @@ class MotionController:
         self.active = False
         self.phase = None
 
-    def load_waypoint_list(self, waypoint_list):
-        """Load a list of waypoints for cycle mode"""
+    def load_waypoint_list(self, waypoint_list, start_index=0):
+        """Load a list of waypoints for cycle mode
+        start_index: The index of the first waypoint to start from
+        """
         self.waypoint_list = waypoint_list
-        self.current_waypoint_index = 0
+        self.current_waypoint_index = start_index % len(waypoint_list) if waypoint_list else 0
         if self.waypoint_list:
             self.start_next_waypoint()
 
@@ -446,6 +455,7 @@ WAYPOINTS_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "waypoints_hist
 WAYPOINT_STATUS_FILE = os.path.join(os.path.dirname(__file__), "waypoint_status.txt")
 BALL_POS_FILE = os.path.join(os.path.dirname(__file__), "ball_position.txt")
 CURRENT_POSITION_FILE = os.path.join(os.path.dirname(__file__), "current_position.txt")
+OBSTACLE_ROBOT_FILE = os.path.join(os.path.dirname(__file__), "obstacle_robot.txt")
 TIME_FILE = os.path.join(os.path.dirname(__file__), "time.txt")
 OBSTACLE_PLAN_FILE = os.path.join(os.path.dirname(__file__), "obstacle_plan.txt")
 
@@ -594,7 +604,7 @@ def _write_ball_positions(path):
                             typ = 'metal'
                 except Exception:
                     pass
-                f.write(f"({x:.6f}, {y:.6f}, {typ})\n")
+                f.write(f"({x:.6f}, {y:.6f}, {typ.upper()})\n")
         os.replace(tmp, path)
     except Exception as e:
         # non-fatal: print to stdout for debugging
@@ -605,18 +615,38 @@ def _write_ball_positions(path):
 
 
 def _write_current_position(path):
-    """Write main robot's current position (x, y) to file — overwrite atomically."""
+    """Write main robot's current position (x, y, bearing_deg) to file — overwrite atomically."""
     try:
         tmp = path + '.tmp'
         pos = main_robot.getField("translation").getSFVec3f()
         x, y = float(pos[0]), float(pos[1])
+        rot = main_robot.getField("rotation").getSFRotation()
+        bearing_rad = float(rot[3])
+        bearing_deg = math.degrees(bearing_rad)
         with open(tmp, 'w') as f:
-            f.write(f"({x:.6f}, {y:.6f})\n")
+            f.write(f"({x:.6f}, {y:.6f}, {bearing_deg:.2f})\n")
         os.replace(tmp, path)
     except Exception as e:
         # non-fatal
         try:
             print(f"[current_position] failed to write: {e}")
+        except Exception:
+            pass
+
+def _write_obstacle_positions(path):
+    """Write all obstacle robots' positions (x, y) to file — overwrite atomically."""
+    try:
+        tmp = path + '.tmp'
+        with open(tmp, 'w') as f:
+            for robot in obstacle_robots:
+                pos = robot.getField("translation").getSFVec3f()
+                x, y = float(pos[0]), float(pos[1])
+                f.write(f"({x:.6f}, {y:.6f})\n")
+        os.replace(tmp, path)
+    except Exception as e:
+        # non-fatal
+        try:
+            print(f"[obstacle_positions] failed to write: {e}")
         except Exception:
             pass
 
@@ -641,20 +671,24 @@ main_trans = main_robot.getField("translation")
 main_rot = main_robot.getField("rotation")
 main_motion = MotionController(main_trans, main_rot, dt, cycle_mode=False)
 
-# Obstacle robot: cycle through waypoints from obstacle_plan.txt (optional)
-obstacle_motion = None
-if obstacle_robot is not None:
-    obs_trans = obstacle_robot.getField("translation")
-    obs_rot = obstacle_robot.getField("rotation")
-    obstacle_motion = MotionController(obs_trans, obs_rot, dt, cycle_mode=True)
-    # Load obstacle waypoints
-    obstacle_waypoints = _load_waypoint_list_from_file(OBSTACLE_PLAN_FILE)
-    if obstacle_waypoints:
-        obstacle_motion.load_waypoint_list(obstacle_waypoints)
-        print(f"Loaded {len(obstacle_waypoints)} waypoints for obstacle robot from {OBSTACLE_PLAN_FILE}")
-    else:
-        print(f"WARNING: No waypoints loaded for obstacle robot from {OBSTACLE_PLAN_FILE}")
-        obstacle_motion = None
+# Obstacle robots: cycle through waypoints from obstacle_plan.txt (optional)
+obstacle_motions = []
+obstacle_waypoints = _load_waypoint_list_from_file(OBSTACLE_PLAN_FILE)
+
+if obstacle_waypoints:
+    print(f"Loaded {len(obstacle_waypoints)} waypoints from {OBSTACLE_PLAN_FILE}")
+    for i, robot in enumerate(obstacle_robots):
+        obs_trans = robot.getField("translation")
+        obs_rot = robot.getField("rotation")
+        obs_motion = MotionController(obs_trans, obs_rot, dt, cycle_mode=True)
+        
+        # Load waypoints with different starting index for each robot
+        start_idx = OBSTACLE_START_INDICES[i] if i < len(OBSTACLE_START_INDICES) else i * 2
+        obs_motion.load_waypoint_list(obstacle_waypoints, start_index=start_idx)
+        obstacle_motions.append(obs_motion)
+        print(f"Obstacle robot {i+1} ({OBSTACLE_ROBOT_NAMES[i]}) starting at waypoint index {start_idx}")
+else:
+    print(f"WARNING: No waypoints loaded from {OBSTACLE_PLAN_FILE}")
 
 # Initialize waypoints history with new session header
 _append_history_header(WAYPOINTS_HISTORY_FILE)
@@ -673,7 +707,7 @@ if current_waypoint is not None:
     main_motion.start(x, y, velocity=None, angle=ang)
 
 # Cruise script execution parameters
-CRUISE_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "waypoints_cruise.py")
+CRUISE_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "decision_making", "waypoints_cruise.py")
 CRUISE_INTERVAL_FRAMES = 10  # Execute cruise script every N frames
 frame_counter = 0
 
@@ -701,9 +735,9 @@ while supervisor.step(TIME_STEP) != -1:
     # 1) Advance main robot motion (non-blocking)
     main_motion.update()
     
-    # 1.2) Advance obstacle robot motion (if exists)
-    if obstacle_motion is not None:
-        obstacle_motion.update()
+    # 1.2) Advance all obstacle robots motion
+    for obs_motion in obstacle_motions:
+        obs_motion.update()
     
     # 1.5) Update real-time status file
     _update_status_file(WAYPOINT_STATUS_FILE, main_motion.active, current_waypoint is not None)
@@ -719,15 +753,20 @@ while supervisor.step(TIME_STEP) != -1:
     # 2) Call absorption check for main robot
     monitor_simple_step(ball_prefix=BALL_PREFIX, ball_count=BALL_COUNT, half_x=ABSORB_BOX_HALF_X, half_y=ABSORB_BOX_HALF_Y, absorb_location=ABSORB_LOCATION)
 
-    # 2.1) Call absorption check for obstacle robot (if exists)
-    if obstacle_robot is not None:
-        _monitor_absorption_for_robot(obstacle_robot, ball_prefix=BALL_PREFIX, ball_count=BALL_COUNT, half_x=ABSORB_BOX_HALF_X, half_y=ABSORB_BOX_HALF_Y, absorb_location=(1.1, 0.0, 0.4))
+    # 2.1) Call absorption check for all obstacle robots
+    for i, obs_robot in enumerate(obstacle_robots):
+        # Different absorb locations for each obstacle robot to avoid overlap
+        absorb_x = 1.1 + i * 0.1
+        _monitor_absorption_for_robot(obs_robot, ball_prefix=BALL_PREFIX, ball_count=BALL_COUNT, half_x=ABSORB_BOX_HALF_X, half_y=ABSORB_BOX_HALF_Y, absorb_location=(absorb_x, 0.0, 0.4))
 
     # 2.5) Write per-frame ball positions to file
     _write_ball_positions(BALL_POS_FILE)
     
     # 2.6) Write robot current position to file
     _write_current_position(CURRENT_POSITION_FILE)
+    # 2.65) Write obstacle robots positions to file
+    _write_obstacle_positions(OBSTACLE_ROBOT_FILE)
+    
     
     # 2.7) Write Webots simulator time to file
     _write_webots_time(TIME_FILE)
