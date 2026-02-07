@@ -42,7 +42,7 @@ PLANNED_INDEX_FILE = os.path.join(BASE_DIR, "planned_waypoints_index.txt")
 # Set the default mode here for convenience. Edit this file and set
 # `DEFAULT_MODE` to the mode you want the script to use when no CLI arg
 # or `MODE` environment variable is provided. Example: 'random', 'nearest', 'improved_nearest' or 'developing'.
-DEFAULT_MODE = 'planned'
+DEFAULT_MODE = 'nearest'
 
 # generation bounds (match supervisor playground bounds)
 X_MIN, X_MAX = -0.86, 0.86
@@ -231,51 +231,51 @@ def goto(x: float, y: float, orientation=None) -> bool:
         orientation_rad = orientation * 3.141592653589793 / 180.0  # Convert degrees to radians
         coord_line = f"({x:.6f}, {y:.6f}, {orientation_rad:.6f})\n"
 
-    cur = _read_current_position(CURRENT_POSITION_FILE)
-    if cur is not None:
-        cur_x, cur_y, cur_bearing = cur
-        critical_alpha = None
-        if abs(cur_x) > 0.85 or abs(cur_y) > 0.85:
-            if cur_x < -0.86:
-                critical_alpha = 45.0 - math.degrees(math.acos((cur_x + 1.0) / (0.1 * math.sqrt(2.0))))
-            if cur_x > 0.86:
-                critical_alpha = 45.0 - math.degrees(math.acos((-cur_x + 1.0) / (0.1 * math.sqrt(2.0))))
-            if cur_y < -0.86:
-                critical_alpha = 45.0 - math.degrees(math.acos((cur_y + 1.0) / (0.1 * math.sqrt(2.0))))
-            if cur_y > 0.86:
-                critical_alpha = 45.0 - math.degrees(math.acos((-cur_y + 1.0) / (0.1 * math.sqrt(2.0))))
+    # cur = _read_current_position(CURRENT_POSITION_FILE)
+    # if cur is not None:
+    #     cur_x, cur_y, cur_bearing = cur
+    #     critical_alpha = None
+    #     if abs(cur_x) > 0.85 or abs(cur_y) > 0.85:
+    #         if cur_x < -0.86:
+    #             critical_alpha = 45.0 - math.degrees(math.acos((cur_x + 1.0) / (0.1 * math.sqrt(2.0))))
+    #         if cur_x > 0.86:
+    #             critical_alpha = 45.0 - math.degrees(math.acos((-cur_x + 1.0) / (0.1 * math.sqrt(2.0))))
+    #         if cur_y < -0.86:
+    #             critical_alpha = 45.0 - math.degrees(math.acos((cur_y + 1.0) / (0.1 * math.sqrt(2.0))))
+    #         if cur_y > 0.86:
+    #             critical_alpha = 45.0 - math.degrees(math.acos((-cur_y + 1.0) / (0.1 * math.sqrt(2.0))))
 
-        if critical_alpha is not None and cur_bearing is not None:
-            alpha = 0.8 * critical_alpha
-            cur_deg = cur_bearing % 360.0
+    #     if critical_alpha is not None and cur_bearing is not None:
+    #         alpha = 0.8 * critical_alpha
+    #         cur_deg = cur_bearing % 360.0
 
-            def _in_interval(value, start, end):
-                if start <= end:
-                    return start <= value <= end
-                return value >= start or value <= end
+    #         def _in_interval(value, start, end):
+    #             if start <= end:
+    #                 return start <= value <= end
+    #             return value >= start or value <= end
 
-            centers = [0.0, 90.0, 180.0, 270.0]
-            in_allowed = False
-            boundaries = []
-            for center in centers:
-                start = (center - alpha) % 360.0
-                end = (center + alpha) % 360.0
-                boundaries.append(start)
-                boundaries.append(end)
-                if _in_interval(cur_deg, start, end):
-                    in_allowed = True
-            if not in_allowed:
-                best_boundary = None
-                best_dist = None
-                for boundary in boundaries:
-                    diff = abs(cur_deg - boundary) % 360.0
-                    dist = min(diff, 360.0 - diff)
-                    if best_dist is None or dist < best_dist:
-                        best_dist = dist
-                        best_boundary = boundary
-                if best_boundary is not None:
-                    orientation_rad = math.radians(best_boundary)
-                    coord_line = f"({x:.6f}, {y:.6f}, {orientation_rad:.6f})\n"
+    #         centers = [0.0, 90.0, 180.0, 270.0]
+    #         in_allowed = False
+    #         boundaries = []
+    #         for center in centers:
+    #             start = (center - alpha) % 360.0
+    #             end = (center + alpha) % 360.0
+    #             boundaries.append(start)
+    #             boundaries.append(end)
+    #             if _in_interval(cur_deg, start, end):
+    #                 in_allowed = True
+    #         if not in_allowed:
+    #             best_boundary = None
+    #             best_dist = None
+    #             for boundary in boundaries:
+    #                 diff = abs(cur_deg - boundary) % 360.0
+    #                 dist = min(diff, 360.0 - diff)
+    #                 if best_dist is None or dist < best_dist:
+    #                     best_dist = dist
+    #                     best_boundary = boundary
+    #             if best_boundary is not None:
+    #                 orientation_rad = math.radians(best_boundary)
+    #                 coord_line = f"({x:.6f}, {y:.6f}, {orientation_rad:.6f})\n"
     
     return _atomic_write(DYNAMIC_WAYPOINTS_FILE, coord_line)
 
