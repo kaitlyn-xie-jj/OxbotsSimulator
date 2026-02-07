@@ -25,18 +25,20 @@ import sys
 from typing import Optional
 
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "controllers", "supervisor_controller"))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "controllers", "supervisor_controller", "real_time_data"))
 WAYPOINT_STATUS_FILE = os.path.join(BASE_DIR, "waypoint_status.txt")
 DYNAMIC_WAYPOINTS_FILE = os.path.join(BASE_DIR, "dynamic_waypoints.txt")
 BALL_POS_FILE = os.path.join(BASE_DIR, "ball_position.txt")
 CURRENT_POSITION_FILE = os.path.join(BASE_DIR, "current_position.txt")
 OBSTACLE_ROBOT_FILE = os.path.join(BASE_DIR, "obstacle_robot.txt")
 TIME_FILE = os.path.join(BASE_DIR, "time.txt")
+SPEED_FILE = os.path.join(BASE_DIR, "speed.txt")
+VISIBLE_BALLS_FILE = os.path.join(BASE_DIR, "visible_balls.txt")
 
 # Set the default mode here for convenience. Edit this file and set
 # `DEFAULT_MODE` to the mode you want the script to use when no CLI arg
-# or `MODE` environment variable is provided. Example: 'random', 'nearest' or 'developing'.
-DEFAULT_MODE = 'nearest'
+# or `MODE` environment variable is provided. Example: 'random', 'nearest', 'improved_nearest' or 'developing'.
+DEFAULT_MODE = 'improved_nearest'
 
 # generation bounds (match supervisor playground bounds)
 X_MIN, X_MAX = -0.86, 0.86
@@ -88,6 +90,11 @@ def _read_ball_positions(path: str):
     except Exception:
         pass
     return out
+
+
+def _read_visible_ball_positions(path: str):
+    """Return list of (x,y,typ) from visible_balls.txt. Ignores invalid lines."""
+    return _read_ball_positions(path)
 
 
 def _read_current_position(path: str):
@@ -165,11 +172,28 @@ def goto(x: float, y: float, orientation=None) -> bool:
     """
     if orientation is None:
         coord_line = f"({x:.6f}, {y:.6f}, None)\n"
+        if abs(x) > 0.85 or abs(y) > 0.85:
+            print(f"[waypoints_cruise] debug: waypoint ({x:.3f}, {y:.3f}) triggered close to boundary warning", file=sys.stderr)
+            
     else:
         orientation_rad = orientation * 3.141592653589793 / 180.0  # Convert degrees to radians
         coord_line = f"({x:.6f}, {y:.6f}, {orientation_rad:.6f})\n"
     
     return _atomic_write(DYNAMIC_WAYPOINTS_FILE, coord_line)
+
+
+def set_velocity(velocity: float) -> bool:
+    """Set cruise speed (m/s) by writing to speed.txt.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        speed_value = float(velocity)
+    except Exception:
+        return False
+    if speed_value <= 0:
+        return False
+    return _atomic_write(SPEED_FILE, f"{speed_value:.6f}\n")
 
 
 def mode_random(status_file: str = WAYPOINT_STATUS_FILE, waypoint_file: str = DYNAMIC_WAYPOINTS_FILE) -> int:
@@ -214,6 +238,43 @@ def mode_nearest(status_file: str = WAYPOINT_STATUS_FILE,
         try:
             dx = x - cx; dy = y - cy
             d2 = dx*dx + dy*dy
+        except Exception:
+            continue
+        if best_d2 is None or d2 < best_d2:
+            best_d2 = d2
+            best = (x, y)
+
+    if best is None:
+        return 0
+
+    ok = goto(best[0], best[1])
+    return 0 if ok else 1
+
+
+def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
+                          waypoint_file: str = DYNAMIC_WAYPOINTS_FILE,
+                          visible_balls_file: str = VISIBLE_BALLS_FILE,
+                          current_file: str = CURRENT_POSITION_FILE) -> int:
+    """Improved nearest mode: choose nearest ball from visible_balls.txt only."""
+    status = _read_status(status_file)
+    # if status != "reached":
+    #     return 0
+
+    cur = _read_current_position(current_file)
+    if cur is None:
+        return 0
+    bx = _read_visible_ball_positions(visible_balls_file)
+    if not bx:
+        return 0
+
+    cx, cy, _ = cur
+    best = None
+    best_d2 = None
+    for (x, y, typ) in bx:
+        try:
+            dx = x - cx
+            dy = y - cy
+            d2 = dx * dx + dy * dy
         except Exception:
             continue
         if best_d2 is None or d2 < best_d2:
@@ -299,6 +360,7 @@ def mode_developing(status_file: str = WAYPOINT_STATUS_FILE,
 _MODE_HANDLERS = {
     "random": mode_random,
     "nearest": mode_nearest,
+    "improved_nearest": mode_improved_nearest,
     "developing": mode_developing,
 }
 

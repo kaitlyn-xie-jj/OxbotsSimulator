@@ -450,14 +450,27 @@ East = 0.0
 South = -math.pi / 2
 West = math.pi
 
-DYNAMIC_WAYPOINTS_FILE = os.path.join(os.path.dirname(__file__), "dynamic_waypoints.txt")
-WAYPOINTS_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "waypoints_history.txt")
-WAYPOINT_STATUS_FILE = os.path.join(os.path.dirname(__file__), "waypoint_status.txt")
-BALL_POS_FILE = os.path.join(os.path.dirname(__file__), "ball_position.txt")
-CURRENT_POSITION_FILE = os.path.join(os.path.dirname(__file__), "current_position.txt")
-OBSTACLE_ROBOT_FILE = os.path.join(os.path.dirname(__file__), "obstacle_robot.txt")
-TIME_FILE = os.path.join(os.path.dirname(__file__), "time.txt")
-OBSTACLE_PLAN_FILE = os.path.join(os.path.dirname(__file__), "obstacle_plan.txt")
+REAL_TIME_DATA_DIR = os.path.join(os.path.dirname(__file__), "real_time_data")
+DYNAMIC_WAYPOINTS_FILE = os.path.join(REAL_TIME_DATA_DIR, "dynamic_waypoints.txt")
+WAYPOINTS_HISTORY_FILE = os.path.join(REAL_TIME_DATA_DIR, "waypoints_history.txt")
+WAYPOINT_STATUS_FILE = os.path.join(REAL_TIME_DATA_DIR, "waypoint_status.txt")
+BALL_POS_FILE = os.path.join(REAL_TIME_DATA_DIR, "ball_position.txt")
+CURRENT_POSITION_FILE = os.path.join(REAL_TIME_DATA_DIR, "current_position.txt")
+OBSTACLE_ROBOT_FILE = os.path.join(REAL_TIME_DATA_DIR, "obstacle_robot.txt")
+TIME_FILE = os.path.join(REAL_TIME_DATA_DIR, "time.txt")
+OBSTACLE_PLAN_FILE = os.path.join(REAL_TIME_DATA_DIR, "obstacle_plan.txt")
+SPEED_FILE = os.path.join(REAL_TIME_DATA_DIR, "speed.txt")
+VISIBLE_BALLS_FILE = os.path.join(REAL_TIME_DATA_DIR, "visible_balls.txt")
+
+# Clear dynamic waypoints at startup before any other processing
+try:
+    with open(DYNAMIC_WAYPOINTS_FILE, "w") as f:
+        f.write("")
+except Exception as e:
+    try:
+        print(f"[startup] failed to clear dynamic_waypoints.txt: {e}")
+    except Exception:
+        pass
 
 def _load_dynamic_waypoint(path):
     """Load a single waypoint from dynamic_waypoints.txt (read-only).
@@ -509,7 +522,7 @@ def _append_to_history(path, waypoint, status, timestamp=None):
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     
     x, y, ang = waypoint
-    ang_s = 'None' if ang is None else f"{ang}"
+    ang_s = 'None' if ang is None else f"{math.degrees(ang):.2f}"
     record = f"({x}, {y}, {ang_s}),  {status}\n"
     
     # Always append to file
@@ -665,6 +678,70 @@ def _write_webots_time(path):
         except Exception:
             pass
 
+def _read_speed_mps(path, default_value):
+    """Read cruise speed in m/s from speed.txt, or return default_value."""
+    try:
+        with open(path, 'r') as f:
+            raw = f.read().strip()
+            if not raw:
+                return default_value
+            value = float(raw)
+            return value if value > 0 else default_value
+    except Exception:
+        return default_value
+
+def _write_visible_balls(path, viewfield_deg=120.0, visible_range_m=0.8):
+    """Write visible balls within viewfield and range to file — overwrite atomically."""
+    try:
+        tmp = path + '.tmp'
+        pos = main_robot.getField("translation").getSFVec3f()
+        rx, ry = float(pos[0]), float(pos[1])
+        rot = main_robot.getField("rotation").getSFRotation()
+        rangle = float(rot[3])
+        half_fov = math.radians(viewfield_deg) / 2.0
+        range_sq = visible_range_m * visible_range_m
+
+        with open(tmp, 'w') as f:
+            for i in range(BALL_COUNT):
+                name = f"{BALL_PREFIX}{i}"
+                node = supervisor.getFromDef(name)
+                if node is None:
+                    continue
+                try:
+                    bpos = node.getField("translation").getSFVec3f()
+                    bx, by = float(bpos[0]), float(bpos[1])
+                except Exception:
+                    continue
+
+                x_rel = bx - rx
+                y_rel = by - ry
+                x_robot = x_rel * math.cos(-rangle) - y_rel * math.sin(-rangle)
+                y_robot = x_rel * math.sin(-rangle) + y_rel * math.cos(-rangle)
+                dist_sq = x_robot * x_robot + y_robot * y_robot
+                if dist_sq > range_sq:
+                    continue
+
+                angle = math.atan2(y_robot, x_robot)
+                if abs(angle) > half_fov:
+                    continue
+
+                typ = "PING"
+                try:
+                    name_field = node.getField("robotName").getSFString()
+                    if name_field is not None and "steel" in name_field.lower():
+                        typ = "STEEL"
+                except Exception:
+                    pass
+
+                f.write(f"({bx:.6f}, {by:.6f}, {typ})\n")
+
+        os.replace(tmp, path)
+    except Exception as e:
+        try:
+            print(f"[visible_balls] failed to write: {e}")
+        except Exception:
+            pass
+
 # ==== Initialize robots ====
 # Main robot: single waypoint navigation from dynamic_waypoints.txt
 main_trans = main_robot.getField("translation")
@@ -731,6 +808,9 @@ while supervisor.step(TIME_STEP) != -1:
             x, y, ang = current_waypoint
             main_motion.start(x, y, velocity=None, angle=ang)
         last_waypoint_mtime = mtime
+
+    # 0.5) Update main robot cruise speed from speed.txt
+    main_motion.velocity = _read_speed_mps(SPEED_FILE, DEFAULT_VELOCITY)
     
     # 1) Advance main robot motion (non-blocking)
     main_motion.update()
@@ -770,6 +850,9 @@ while supervisor.step(TIME_STEP) != -1:
     
     # 2.7) Write Webots simulator time to file
     _write_webots_time(TIME_FILE)
+
+    # 2.8) Write visible balls for main robot
+    _write_visible_balls(VISIBLE_BALLS_FILE)
 
     # 3) If main robot motion completed, record as 'reached' and wait for next dynamic waypoint
     if not main_motion.active and current_waypoint is not None:
