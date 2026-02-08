@@ -48,6 +48,8 @@ DEFAULT_MODE = 'improved_nearest'
 # generation bounds (match supervisor playground bounds)
 X_MIN, X_MAX = -0.86, 0.86
 Y_MIN, Y_MAX = -0.86, 0.86
+RADAR_MAX_RANGE = 0.8
+RADAR_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "radar_memory.txt")
 
 
 def _read_status(path: str) -> Optional[str]:
@@ -182,7 +184,7 @@ def _read_state_pair(path: str) -> Optional[tuple[float, float]]:
         return None
 
 
-def radar_sensor(max_range: float = 0.8, corridor: float = 0.2) -> list[tuple[str, float]]:
+def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> list[tuple[str, float]]:
     """Return obstacle directions and distances in robot frame.
 
     Directions: "front", "right", "left", "rear" within +/- corridor/2
@@ -282,6 +284,116 @@ def radar_sensor(max_range: float = 0.8, corridor: float = 0.2) -> list[tuple[st
     return [(direction, dist) for direction, dist in hits.items()]
 
 
+def collision_avoiding_v1(current_file: str = CURRENT_POSITION_FILE) -> bool:
+    """Stop when radar detects a close obstacle inside the safe zone."""
+    cur = _read_current_position(current_file)
+    if cur is None:
+        return False
+    radar_hits = radar_sensor()
+    if not radar_hits:
+        return False
+    if any(dist < 0.1 for _, dist in radar_hits) and abs(cur[0]) < 0.7 and abs(cur[1]) < 0.7:
+        return stop()
+    return False
+
+def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
+    cur = _read_current_position(current_file)
+    if cur is None:
+        return False
+    cx, cy, bearing = cur
+    radar_hits = radar_sensor()
+    sim_time = _read_time_seconds(TIME_FILE)
+    if sim_time is None:
+        return False
+
+    values = {"front": 0.0, "right": 0.0, "left": 0.0, "rear": 0.0}
+    for direction, dist in radar_hits:
+        if direction in values:
+            values[direction] = max(0.0, RADAR_MAX_RANGE - dist)
+
+    history_lines = []
+    cutoff_time = sim_time - 2
+    try:
+        with open(RADAR_HISTORY_FILE, "r") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line:
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 5:
+                    continue
+                try:
+                    t = float(parts[0])
+                except Exception:
+                    continue
+                if t >= cutoff_time:
+                    history_lines.append(line)
+    except Exception:
+        pass
+
+    record = f"{sim_time:.3f},{values['front']:.6f},{values['right']:.6f},{values['left']:.6f},{values['rear']:.6f}"
+    history_lines.append(record)
+    _atomic_write(RADAR_HISTORY_FILE, "\n".join(history_lines) + "\n")
+
+    if any(dist < 0.1 for _, dist in radar_hits) and bearing is not None and abs(cx) < 0.7 and abs(cy) < 0.7:
+        rows = []
+        for line in history_lines:
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 5:
+                continue
+            try:
+                t = float(parts[0])
+                vals = [float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])]
+            except Exception:
+                continue
+            rows.append((t, vals))
+
+        if rows:
+            if len(rows) >= 2:
+                dt = rows[-1][0] - rows[-2][0]
+                if dt <= 0.0:
+                    dt = 0.0
+            else:
+                dt = 0.0
+            next_time = sim_time + dt
+
+            times = [t for t, _ in rows]
+            preds = []
+            n = len(times)
+            sum_t = sum(times)
+            sum_t2 = sum(t * t for t in times)
+            denom = n * sum_t2 - sum_t * sum_t
+            for idx in range(4):
+                values_list = [vals[idx] for _, vals in rows]
+                if n < 2 or denom == 0.0:
+                    pred = values_list[-1]
+                else:
+                    sum_v = sum(values_list)
+                    sum_tv = sum(t * v for t, v in zip(times, values_list))
+                    slope = (n * sum_tv - sum_t * sum_v) / denom
+                    intercept = (sum_v / n) - slope * (sum_t / n)
+                    pred = slope * next_time + intercept
+                preds.append(max(0.0, min(RADAR_MAX_RANGE, pred)))
+
+            directions = ["front", "right", "left", "rear"]
+            min_idx = min(range(4), key=lambda i: preds[i])
+            best_dir = directions[min_idx]
+            best_dist = max(0.0, RADAR_MAX_RANGE - preds[min_idx])
+
+            dir_vectors = {
+                "front": (best_dist, 0.0),
+                "rear": (-best_dist, 0.0),
+                "left": (0.0, best_dist),
+                "right": (0.0, -best_dist),
+            }
+            vx, vy = dir_vectors[best_dir]
+            theta = math.radians(bearing)
+            dx_world = vx * math.cos(theta) - vy * math.sin(theta)
+            dy_world = vx * math.sin(theta) + vy * math.cos(theta)
+            return goto(cx + dx_world, cy + dy_world, bearing)
+
+    return False
+
 def _read_planned_waypoints(path: str):
     """Return list of (x, y, angle_or_none) from planned_waypoints.txt."""
     namespace = {"North": math.pi / 2, "East": 0.0, "South": -math.pi / 2, "West": math.pi, "None": None}
@@ -353,24 +465,24 @@ def goto(x: float, y: float, orientation=None) -> bool:
     else:
         coord_line = f"({x:.6f}, {y:.6f}, {orientation:.6f})\n"
 
-    critical_alpha = None
-    if abs(x) > 0.86 or abs(y) > 0.86:
-        if x < -0.86:
-            critical_alpha = 45.0 - math.degrees(math.acos((x + 1.0) / (0.1 * math.sqrt(2.0))))
-            coord_line = f"({x:.6f}, {y:.6f}, 180)\n"
-        if x > 0.86:
-            critical_alpha = 45.0 - math.degrees(math.acos((-x + 1.0) / (0.1 * math.sqrt(2.0))))
-            coord_line = f"({x:.6f}, {y:.6f}, 0)\n"
-        if y < -0.86:
-            critical_alpha = 45.0 - math.degrees(math.acos((y + 1.0) / (0.1 * math.sqrt(2.0))))
-            coord_line = f"({x:.6f}, {y:.6f}, -90)\n"
-        if y > 0.86:
-            critical_alpha = 45.0 - math.degrees(math.acos((-y + 1.0) / (0.1 * math.sqrt(2.0))))
-            coord_line = f"({x:.6f}, {y:.6f}, 90)\n"
-        # print(f"[waypoints_cruise] critical alpha: {critical_alpha:.2f} degrees", file=sys.stderr)
+    # critical_alpha = None
+    # if abs(x) > 0.86 or abs(y) > 0.86:
+    #     if x < -0.86:
+    #         critical_alpha = 45.0 - math.degrees(math.acos((x + 1.0) / (0.1 * math.sqrt(2.0))))
+    #         coord_line = f"({x:.6f}, {y:.6f}, 180)\n"
+    #     if x > 0.86:
+    #         critical_alpha = 45.0 - math.degrees(math.acos((-x + 1.0) / (0.1 * math.sqrt(2.0))))
+    #         coord_line = f"({x:.6f}, {y:.6f}, 0)\n"
+    #     if y < -0.86:
+    #         critical_alpha = 45.0 - math.degrees(math.acos((y + 1.0) / (0.1 * math.sqrt(2.0))))
+    #         coord_line = f"({x:.6f}, {y:.6f}, -90)\n"
+    #     if y > 0.86:
+    #         critical_alpha = 45.0 - math.degrees(math.acos((-y + 1.0) / (0.1 * math.sqrt(2.0))))
+    #         coord_line = f"({x:.6f}, {y:.6f}, 90)\n"
+    #     # print(f"[waypoints_cruise] critical alpha: {critical_alpha:.2f} degrees", file=sys.stderr)
 
-    if critical_alpha is not None:
-        pass
+    # if critical_alpha is not None:
+    #     pass
     
     return _atomic_write(DYNAMIC_WAYPOINTS_FILE, coord_line)
 
@@ -506,12 +618,8 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
         return 0
 
     cur = _read_current_position(current_file)
-    radar_hits = radar_sensor()
-    if radar_hits:
-        # print(f"[waypoints_cruise] obstacle detected by radar: {radar_hits}", file=sys.stderr)
-        if any(dist < 0.1 for _, dist in radar_hits) and abs(cur[0]) < 0.7 and abs(cur[1]) < 0.7:
-            stop()
-            return 0
+    if collision_avoiding_v2(current_file):
+        return 0
 
     status = _read_status(status_file)
     # if status != "reached":
