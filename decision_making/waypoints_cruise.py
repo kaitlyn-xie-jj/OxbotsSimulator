@@ -128,7 +128,7 @@ def _read_current_position(path: str):
 
 
 def _read_obstacle_positions(path: str):
-    """Return list of (x, y) from obstacle_robot.txt. Ignores invalid lines."""
+    """Return list of (x, y, bearing_deg_or_none) from obstacle_robot.txt. Ignores invalid lines."""
     out = []
     try:
         with open(path, "r") as f:
@@ -144,7 +144,8 @@ def _read_obstacle_positions(path: str):
                 try:
                     x = float(parts[0])
                     y = float(parts[1])
-                    out.append((x, y))
+                    bearing = float(parts[2]) if len(parts) >= 3 else None
+                    out.append((x, y, bearing))
                 except Exception:
                     continue
     except Exception:
@@ -179,6 +180,101 @@ def _read_state_pair(path: str) -> Optional[tuple[float, float]]:
             return (float(nums[0]), float(nums[1]))
     except Exception:
         return None
+
+
+def radar_sensor(max_range: float = 0.8, corridor: float = 0.2) -> list[tuple[str, float]]:
+    """Return obstacle directions and distances in robot frame.
+
+    Directions: "front", "right", "left", "rear" within +/- corridor/2
+    lateral band, and within max_range. Returns [] if nothing.
+    """
+    cur = _read_current_position(CURRENT_POSITION_FILE)
+    if cur is None:
+        return []
+    cx, cy, bearing = cur
+    if bearing is None:
+        return []
+
+    obstacles = _read_obstacle_positions(OBSTACLE_ROBOT_FILE)
+    if not obstacles:
+        return []
+
+    half_band = corridor / 2.0
+    theta = math.radians(bearing)
+    hits = {}
+
+    obstacle_half = 0.1
+    corners_local = [
+        (obstacle_half, obstacle_half),
+        (obstacle_half, -obstacle_half),
+        (-obstacle_half, obstacle_half),
+        (-obstacle_half, -obstacle_half),
+    ]
+
+    for ox, oy, obearing in obstacles:
+        otheta = math.radians(obearing) if obearing is not None else 0.0
+        cos_o = math.cos(otheta)
+        sin_o = math.sin(otheta)
+        for lx, ly in corners_local:
+            # Obstacle local -> world
+            wx = ox + lx * cos_o - ly * sin_o
+            wy = oy + lx * sin_o + ly * cos_o
+
+            dx = wx - cx
+            dy = wy - cy
+            # World -> robot frame: x forward, y left
+            x_robot = dx * math.cos(theta) + dy * math.sin(theta)
+            y_robot = -dx * math.sin(theta) + dy * math.cos(theta)
+
+            if x_robot > 0 and abs(y_robot) <= half_band and x_robot <= max_range:
+                dist = x_robot
+                direction = "front"
+            elif x_robot < 0 and abs(y_robot) <= half_band and -x_robot <= max_range:
+                dist = -x_robot
+                direction = "rear"
+            elif y_robot > 0 and abs(x_robot) <= half_band and y_robot <= max_range:
+                dist = y_robot
+                direction = "left"
+            elif y_robot < 0 and abs(x_robot) <= half_band and -y_robot <= max_range:
+                dist = -y_robot
+                direction = "right"
+            else:
+                continue
+
+            if dist <= max_range:
+                prev = hits.get(direction)
+                if prev is None or dist < prev:
+                    hits[direction] = dist
+
+    # Add virtual points at (x, 1), (x, -1), (1, y), (-1, y)
+    virtual_points = [(cx, 1.0), (cx, -1.0), (1.0, cy), (-1.0, cy)]
+    for vx, vy in virtual_points:
+        dx = vx - cx
+        dy = vy - cy
+        x_robot = dx * math.cos(theta) + dy * math.sin(theta)
+        y_robot = -dx * math.sin(theta) + dy * math.cos(theta)
+
+        if x_robot > 0 and abs(y_robot) <= half_band and x_robot <= max_range:
+            dist = x_robot
+            direction = "front"
+        elif x_robot < 0 and abs(y_robot) <= half_band and -x_robot <= max_range:
+            dist = -x_robot
+            direction = "rear"
+        elif y_robot > 0 and abs(x_robot) <= half_band and y_robot <= max_range:
+            dist = y_robot
+            direction = "left"
+        elif y_robot < 0 and abs(x_robot) <= half_band and -y_robot <= max_range:
+            dist = -y_robot
+            direction = "right"
+        else:
+            continue
+
+        if dist <= max_range:
+            prev = hits.get(direction)
+            if prev is None or dist < prev:
+                hits[direction] = dist
+
+    return [(direction, dist) for direction, dist in hits.items()]
 
 
 def _read_planned_waypoints(path: str):
@@ -230,6 +326,7 @@ def _read_planned_index(path: str) -> Optional[int]:
 def _write_planned_index(path: str, index: int) -> bool:
     return _atomic_write(path, f"{int(index)}\n")
     
+
 
 def goto(x: float, y: float, orientation=None) -> bool:
     """Set the dynamic waypoint to the specified coordinates.
@@ -403,6 +500,10 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
         goto(-0.9, 0.0, 180.0)
         return 0
 
+    radar_hits = radar_sensor()
+    if radar_hits:
+        print(f"[waypoints_cruise] obstacle detected by radar: {radar_hits}", file=sys.stderr)
+
     status = _read_status(status_file)
     # if status != "reached":
     #     return 0
@@ -420,7 +521,7 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
             state = (0.0, 0.0)
         miss_time = int(state[0])
         search_record = int(state[1])
-        print(f"[waypoints_cruise] no visible balls, miss_time={miss_time}, search_record={search_record}", file=sys.stderr)
+        # print(f"[waypoints_cruise] no visible balls, miss_time={miss_time}, search_record={search_record}", file=sys.stderr)
         if miss_time == 0.0:
           if abs(cx) > 0.86 or abs(cy) > 0.86:
               cx = max(-0.86, min(0.86, cx))

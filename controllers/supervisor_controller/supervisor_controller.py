@@ -671,7 +671,9 @@ def _write_obstacle_positions(path):
             for robot in obstacle_robots:
                 pos = robot.getField("translation").getSFVec3f()
                 x, y = float(pos[0]), float(pos[1])
-                f.write(f"({x:.6f}, {y:.6f})\n")
+                rot = robot.getField("rotation").getSFRotation()
+                bearing_deg = math.degrees(float(rot[3]))
+                f.write(f"({x:.6f}, {y:.6f}, {bearing_deg:.2f})\n")
         os.replace(tmp, path)
     except Exception as e:
         # non-fatal
