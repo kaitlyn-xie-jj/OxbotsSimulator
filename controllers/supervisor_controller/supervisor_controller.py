@@ -10,8 +10,8 @@ import subprocess
 # ==== Initialization ====
 RANDOM_SEED = 1236
 DEFAULT_VELOCITY = 0.3 # m/s
-DEFAULT_ANGULAR_VELOCITY_MAIN = 1  # rad/s
-DEFAULT_ANGULAR_VELOCITY_OBSTACLE = 1  # rad/s
+DEFAULT_ANGULAR_VELOCITY_MAIN = 90  # deg/s (equiv to 2 rad/s)
+DEFAULT_ANGULAR_VELOCITY_OBSTACLE = 90  # deg/s (equiv to 2 rad/s)
 supervisor = Supervisor()
 TIME_STEP = int(supervisor.getBasicTimeStep())
 dt = TIME_STEP / 1000.0  # seconds
@@ -46,6 +46,9 @@ def _normalize_angle(a):
     """Normalize angle to [-pi, pi]"""
     return (a + math.pi) % (2 * math.pi) - math.pi
 
+def _deg_to_rad(deg):
+    return deg * math.pi / 180.0
+
 # ==== Non-blocking MotionController ====
 class MotionController:
     """Controls robot motion with support for waypoint cycling"""
@@ -60,7 +63,9 @@ class MotionController:
         self.start_angle = 0.0
         self.target_angle = None
         self.velocity = 0.3
-        self.angular_speed = DEFAULT_ANGULAR_VELOCITY_OBSTACLE if cycle_mode else DEFAULT_ANGULAR_VELOCITY_MAIN
+        self.angular_speed = _deg_to_rad(
+            DEFAULT_ANGULAR_VELOCITY_OBSTACLE if cycle_mode else DEFAULT_ANGULAR_VELOCITY_MAIN
+        )
         self.direction = np.array([0.0, 0.0, 0.0])
         self.total_dist = 0.0
         self.traveled = 0.0
@@ -94,7 +99,9 @@ class MotionController:
         self.elapsed = 0.0
         self.move_speed = self.velocity
         self.angle_delta = 0.0
-        self.angular_speed = DEFAULT_ANGULAR_VELOCITY_OBSTACLE if self.cycle_mode else DEFAULT_ANGULAR_VELOCITY_MAIN
+        self.angular_speed = _deg_to_rad(
+            DEFAULT_ANGULAR_VELOCITY_OBSTACLE if self.cycle_mode else DEFAULT_ANGULAR_VELOCITY_MAIN
+        )
         self.direction = (delta / dist) if dist > 1e-9 else np.array([0.0, 0.0, 0.0])
 
         if dist <= 1e-6:

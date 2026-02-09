@@ -424,7 +424,7 @@ def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
     history_lines.append(record)
     _atomic_write(RADAR_HISTORY_FILE, "\n".join(history_lines) + "\n")
 
-    if any(dist < 0.05 for _, dist in radar_hits) and bearing is not None and abs(cx) < 0.8 and abs(cy) < 0.7:
+    if any(dist < 0.05 for _, dist in radar_hits) and bearing is not None and abs(cx) <= 0.82 and abs(cy) <= 0.82:
         weights = [
             max(0.0, values["front"]),
             max(0.0, values["right"]),
@@ -706,8 +706,8 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
                           current_file: str = CURRENT_POSITION_FILE) -> int:
     """Improved nearest mode: choose nearest ball from visible_balls.txt only."""
 
-    # if collision_avoiding_v2(current_file):
-    #     return 0
+    if collision_avoiding_v2(current_file):
+        return 0
 
     sim_time = _read_time_seconds(TIME_FILE)
     if sim_time is not None and sim_time > 170.0:
@@ -734,9 +734,9 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
         search_record = int(state[1])
         # print(f"[waypoints_cruise] no visible balls, miss_time={miss_time}, search_record={search_record}", file=sys.stderr)
         if miss_time == 0.0:
-          if abs(cx) > 0.85 or abs(cy) > 0.85:
-              cx = max(-0.85, min(0.85, cx))
-              cy = max(-0.85, min(0.85, cy))
+          if abs(cx) > 0.8 or abs(cy) > 0.8:
+              cx = max(-0.8, min(0.8, cx))
+              cy = max(-0.8, min(0.8, cy))
               goto(cx, cy, bearing)
           else:
               heading = None if bearing is None else bearing + 179.0
