@@ -50,6 +50,7 @@ X_MIN, X_MAX = -0.86, 0.86
 Y_MIN, Y_MAX = -0.86, 0.86
 RADAR_MAX_RANGE = 0.8
 RADAR_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "radar_memory.txt")
+COLLISION_STATUS_FILE = os.path.join(os.path.dirname(__file__), "collision_avoiding_status.txt")
 
 
 def _read_status(path: str) -> Optional[str]:
@@ -70,6 +71,11 @@ def _atomic_write(path: str, content: str) -> bool:
     except Exception as e:
         print(f"[waypoints_cruise] write failed: {e}", file=sys.stderr)
         return False
+
+
+def _write_collision_status(active: bool) -> None:
+    status = "activated" if active else "inactive"
+    _atomic_write(COLLISION_STATUS_FILE, f"{status}\n")
 
 
 def _read_ball_positions(path: str):
@@ -299,11 +305,13 @@ def collision_avoiding_v1(current_file: str = CURRENT_POSITION_FILE) -> bool:
 def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
     cur = _read_current_position(current_file)
     if cur is None:
+        _write_collision_status(False)
         return False
     cx, cy, bearing = cur
     radar_hits = radar_sensor()
     sim_time = _read_time_seconds(TIME_FILE)
     if sim_time is None:
+        _write_collision_status(False)
         return False
 
     values = {"front": 0.0, "right": 0.0, "left": 0.0, "rear": 0.0}
@@ -335,64 +343,60 @@ def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
     history_lines.append(record)
     _atomic_write(RADAR_HISTORY_FILE, "\n".join(history_lines) + "\n")
 
-    if any(dist < 0.1 for _, dist in radar_hits) and bearing is not None and abs(cx) < 0.7 and abs(cy) < 0.7:
-        rows = []
-        for line in history_lines:
-            parts = [p.strip() for p in line.split(",")]
-            if len(parts) < 5:
-                continue
-            try:
-                t = float(parts[0])
-                vals = [float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])]
-            except Exception:
-                continue
-            rows.append((t, vals))
+    if any(dist < 0.05 for _, dist in radar_hits) and bearing is not None and abs(cx) < 0.7 and abs(cy) < 0.7:
+        weights = [
+            max(0.0, values["front"]),
+            max(0.0, values["right"]),
+            max(0.0, values["left"]),
+            max(0.0, values["rear"]),
+        ]
 
-        if rows:
-            if len(rows) >= 2:
-                dt = rows[-1][0] - rows[-2][0]
-                if dt <= 0.0:
-                    dt = 0.0
-            else:
-                dt = 0.0
-            next_time = sim_time + dt
+        normals_robot = [
+            (1.0, 0.0),   # front
+            (0.0, -1.0),  # right
+            (0.0, 1.0),   # left
+            (-1.0, 0.0),  # rear
+        ]
+        theta = math.radians(bearing)
+        cos_t = math.cos(theta)
+        sin_t = math.sin(theta)
 
-            times = [t for t, _ in rows]
-            preds = []
-            n = len(times)
-            sum_t = sum(times)
-            sum_t2 = sum(t * t for t in times)
-            denom = n * sum_t2 - sum_t * sum_t
-            for idx in range(4):
-                values_list = [vals[idx] for _, vals in rows]
-                if n < 2 or denom == 0.0:
-                    pred = values_list[-1]
-                else:
-                    sum_v = sum(values_list)
-                    sum_tv = sum(t * v for t, v in zip(times, values_list))
-                    slope = (n * sum_tv - sum_t * sum_v) / denom
-                    intercept = (sum_v / n) - slope * (sum_t / n)
-                    pred = slope * next_time + intercept
-                preds.append(max(0.0, min(RADAR_MAX_RANGE, pred)))
+        total_w = sum(weights)
+        if total_w <= 0.0:
+            _write_collision_status(False)
+            return False
 
-            directions = ["front", "right", "left", "rear"]
-            min_idx = min(range(4), key=lambda i: preds[i])
-            best_dir = directions[min_idx]
-            best_dist = max(0.0, RADAR_MAX_RANGE - preds[min_idx])
+        world_normals = []
+        for (nx, ny) in normals_robot:
+            wx = nx * cos_t - ny * sin_t
+            wy = nx * sin_t + ny * cos_t
+            world_normals.append((wx, wy))
 
-            dir_vectors = {
-                "front": (best_dist, 0.0),
-                "rear": (-best_dist, 0.0),
-                "left": (0.0, best_dist),
-                "right": (0.0, -best_dist),
-            }
-            vx, vy = dir_vectors[best_dir]
-            theta = math.radians(bearing)
-            dx_world = vx * math.cos(theta) - vy * math.sin(theta)
-            dy_world = vx * math.sin(theta) + vy * math.cos(theta)
-            return goto(cx + dx_world, cy + dy_world, bearing)
+        # Pairwise sums: front+left, left+rear, rear+right, right+front.
+        pair_indices = [(0, 2), (2, 3), (3, 1), (1, 0)]
+        best_vec = None
+        best_mag = None
+        for i, j in pair_indices:
+            vx = weights[i] * world_normals[i][0] + weights[j] * world_normals[j][0]
+            vy = weights[i] * world_normals[i][1] + weights[j] * world_normals[j][1]
+            mag = math.hypot(vx, vy)
+            if best_mag is None or mag > best_mag:
+                best_mag = mag
+                best_vec = (vx, vy)
 
-    return False
+        if best_vec is None or best_mag is None or best_mag <= 1e-6:
+            _write_collision_status(False)
+            return False
+
+        # Invert direction after selecting the strongest pairwise vector.
+        best_vec = (-best_vec[0], -best_vec[1])
+
+        step = 0.15
+        dx_world = step * (best_vec[0] / best_mag)
+        dy_world = step * (best_vec[1] / best_mag)
+        _write_collision_status(True)
+        print(f"[waypoints_cruise] collision avoiding activated, radar values: {weights}, move vector: ({dx_world:.3f}, {dy_world:.3f})", file=sys.stderr)
+        return goto(cx + dx_world, cy + dy_world, bearing)
 
 def _read_planned_waypoints(path: str):
     """Return list of (x, y, angle_or_none) from planned_waypoints.txt."""
@@ -612,10 +616,21 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
                           visible_balls_file: str = VISIBLE_BALLS_FILE,
                           current_file: str = CURRENT_POSITION_FILE) -> int:
     """Improved nearest mode: choose nearest ball from visible_balls.txt only."""
+
+    
+
     sim_time = _read_time_seconds(TIME_FILE)
     if sim_time is not None and sim_time > 170.0:
         goto(-0.9, 0.0, 180.0)
         return 0
+
+    collision_status = _read_status(COLLISION_STATUS_FILE)
+    if collision_status == "activated":
+        waypoint_status = _read_status(status_file)
+        if waypoint_status == "going":
+            return 0
+        if waypoint_status == "reached":
+            _write_collision_status(False)
 
     cur = _read_current_position(current_file)
     if collision_avoiding_v2(current_file):
