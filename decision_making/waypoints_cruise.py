@@ -43,6 +43,7 @@ WAYPOINTS_STACK_FILE = os.path.join(os.path.dirname(__file__), "waypoints_stack.
 RADAR_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "radar_memory.txt")
 COLLISION_STATUS_FILE = os.path.join(os.path.dirname(__file__), "collision_avoiding_status.txt")
 DYNAMIC_WAYPOINTS_TYPE_FILE = os.path.join(os.path.dirname(__file__), "dynamic_waypoints_type.txt")
+ROBOT_AROUND_FILE = os.path.join(os.path.dirname(__file__), "robot_around.txt")
 
 # Set the default mode here for convenience. Edit this file and set
 # `DEFAULT_MODE` to the mode you want the script to use when no CLI arg
@@ -496,6 +497,127 @@ def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
         if waypoint_status == "going":
             return True
 
+    return False
+
+def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
+    trigger_distance = 0.05
+    cur = _read_current_position(current_file)
+    if cur is None:
+        _write_collision_status(False)
+        set_velocity(NORMAL_SPEED)
+        return False
+    cx, cy, bearing = cur
+
+    collision_status = _read_status(COLLISION_STATUS_FILE)
+    waypoint_status = _read_status(WAYPOINT_STATUS_FILE)
+    if collision_status == "activated":
+        if waypoint_status == "reached":
+            _write_collision_status(False)
+            set_velocity(NORMAL_SPEED)
+            stack_wp = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
+            if stack_wp is not None:
+                _atomic_write(WAYPOINTS_STACK_FILE, "")
+                x, y, orientation = stack_wp
+                if orientation is None:
+                    goto(x, y)
+                else:
+                    goto(x, y, orientation)
+                return True
+            
+    radar_hits = radar_sensor()
+
+    values = {"front": 0.8, "right": 0.8, "left": 0.8, "rear": 0.8}
+    for direction, dist in radar_hits:
+        if direction in values:
+            values[direction] = min(0.8, dist)
+
+    # Unit vectors every 30 degrees across 0-360.
+    jump_step = 0.15
+    unit_vectors_10deg = [
+        (math.cos(math.radians(deg)), math.sin(math.radians(deg)))
+        for deg in range(0, 360, 10)
+    ]
+
+    weights_rob_around = {
+        key: (jump_step + 0.1) if val > jump_step + 0.1 else val
+        for key, val in values.items()
+    }
+    weights_rob_around = {
+        key: value for key, value in weights_rob_around.items()
+    }
+
+    weighted_vectors = []
+    for ux, uy in unit_vectors_10deg:
+        wx = (weights_rob_around["front"] * ux if ux >= 0 else weights_rob_around["rear"] * ux)
+        wy = (weights_rob_around["left"] * uy if uy >= 0 else weights_rob_around["right"] * uy)
+        weighted_vectors.append((wx, wy))
+
+    _atomic_write(
+        ROBOT_AROUND_FILE,
+        "\n".join(f"({vx:.6f}, {vy:.6f})" for vx, vy in weighted_vectors) + "\n",
+    )
+
+    if any(dist < trigger_distance for _, dist in radar_hits) and bearing is not None and abs(cx) <= 0.82 and abs(cy) <= 0.82:
+        
+        destination_vector = (-cx, -cy)
+        # dynamic_type = _read_status(DYNAMIC_WAYPOINTS_TYPE_FILE)
+        # if dynamic_type == "task":
+        #     dynamic_wp = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
+        #     if dynamic_wp is not None:
+        #         destination_vector = (dynamic_wp[0] - cx, dynamic_wp[1] - cy)
+        # elif dynamic_type == "collision":
+        #     stacked_wp = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
+        #     if stacked_wp is not None:
+        #         destination_vector = (stacked_wp[0] - cx, stacked_wp[1] - cy)
+
+
+        dynamic_wp = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
+        if dynamic_wp is not None:
+            destination_vector = (dynamic_wp[0] - cx, dynamic_wp[1] - cy)
+
+
+        dest_mag = math.hypot(destination_vector[0], destination_vector[1])
+        destination_vector = (destination_vector[0] / dest_mag, destination_vector[1] / dest_mag) if dest_mag > 0 else (0.0, 0.0)
+
+        if bearing is not None:
+            theta = math.radians(bearing)
+            cos_t = math.cos(theta)
+            sin_t = math.sin(theta)
+            weighted_vectors_world = [
+                (vx * cos_t - vy * sin_t, vx * sin_t + vy * cos_t)
+                for vx, vy in weighted_vectors
+            ]
+
+        min_mag = jump_step + 0.05
+        filtered_vectors = [
+            v for v in weighted_vectors_world if math.hypot(v[0], v[1]) >= min_mag
+        ]
+        if not filtered_vectors:
+            filtered_vectors = weighted_vectors_world
+
+        # Select the vector with the largest projection onto the destination vector.
+        best_vec = max(
+            filtered_vectors,
+            key=lambda v: v[0] * destination_vector[0] + v[1] * destination_vector[1],
+        )
+        best_mag = math.hypot(best_vec[0], best_vec[1])
+
+        # Invert direction after selecting the strongest pairwise vector.
+        best_vec = (best_vec[0], best_vec[1])
+
+        dx_world = jump_step * (best_vec[0] / best_mag)
+        dy_world = jump_step * (best_vec[1] / best_mag)
+        set_velocity(MAX_SPEED)
+        _write_collision_status(True)
+        _stack_current_waypoint()
+        # print(f"[waypoints_cruise] collision avoiding activated, radar values: {weights}, move vector: ({dx_world:.3f}, {dy_world:.3f})", file=sys.stderr)
+        goto(cx + dx_world, cy + dy_world, bearing, waypoint_type="collision")
+
+        return True
+        
+    if collision_status == "activated":
+        if waypoint_status == "going":
+            return True
 
     return False
 

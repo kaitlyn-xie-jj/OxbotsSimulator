@@ -901,7 +901,7 @@ if current_waypoint is not None:
 
 # Cruise script execution parameters
 CRUISE_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "decision_making", "waypoints_cruise.py")
-CRUISE_INTERVAL_FRAMES = 10  # Execute cruise script every N frames
+CRUISE_INTERVAL_FRAMES = 15  # Execute cruise script every N frames
 frame_counter = 0
 
 # Non-blocking main loop

@@ -23,6 +23,9 @@ DYNAMIC_FILE = os.path.join(DATA_DIR, "dynamic_waypoints.txt")
 STACK_FILE = os.path.abspath(
     os.path.join(ROOT_DIR, "..", "..", "decision_making", "waypoints_stack.txt")
 )
+ROBOT_AROUND_FILE = os.path.abspath(
+    os.path.join(ROOT_DIR, "..", "..", "decision_making", "robot_around.txt")
+)
 
 
 def _read_lines(path: str) -> list[str]:
@@ -153,6 +156,17 @@ def _get_stack_waypoint():
     return None
 
 
+def _get_robot_around():
+    out = []
+    for line in _read_lines(ROBOT_AROUND_FILE):
+        item = _extract_xy_from_line(line)
+        if item is None:
+            continue
+        x, y = item
+        out.append({"x": x, "y": y})
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, payload, status=200):
         body = json.dumps(payload).encode("utf-8")
@@ -196,6 +210,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/data/waypoints":
             self._send_json({"dynamic": _get_dynamic_waypoint(), "stack": _get_stack_waypoint()})
+            return
+        if path == "/data/robot-around":
+            self._send_json({"vectors": _get_robot_around()})
             return
 
         self._send_text("not found", 404, "text/plain")

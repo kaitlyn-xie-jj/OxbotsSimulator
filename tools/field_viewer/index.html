@@ -87,6 +87,26 @@
         font-size: 12px;
         color: var(--muted);
       }
+      .around-wrap {
+        margin-top: 18px;
+        display: grid;
+        justify-items: center;
+      }
+      .around-title {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+      }
+      #around {
+        width: 100%;
+        max-width: 220px;
+        aspect-ratio: 1 / 1;
+        border: 2px solid rgba(31, 31, 31, 0.5);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.5);
+      }
       @media (max-width: 900px) {
         .wrap {
           grid-template-columns: 1fr;
@@ -113,12 +133,18 @@
           <div><span class="chip" style="background: var(--visible)"></span> Visible Highlight</div>
         </div>
         <div class="note">Range: x,y in [-1, 1] meters</div>
+        <div class="around-wrap">
+          <canvas id="around" width="220" height="220"></canvas>
+          <div class="around-title">robot around</div>
+        </div>
       </div>
     </div>
 
     <script>
       const canvas = document.getElementById("field");
       const ctx = canvas.getContext("2d");
+      const aroundCanvas = document.getElementById("around");
+      const aroundCtx = aroundCanvas.getContext("2d");
 
       const robotStat = document.getElementById("robotStat");
       const ballStat = document.getElementById("ballStat");
@@ -135,7 +161,10 @@
         dynamic: "#e4572e",
         stack: "#1d7d7a",
         waypointLine: "rgba(0, 0, 0, 0.35)",
-        waypointMuted: "#7a7a7a"
+        waypointMuted: "#7a7a7a",
+        aroundBox: "rgba(31, 31, 31, 0.5)",
+        aroundVector: "#1d7d7a",
+        aroundCenter: "#1f1f1f"
       };
 
       function worldToCanvas(x, y) {
@@ -245,6 +274,59 @@
         ctx.restore();
       }
 
+      function drawRobotAround(vectors, bearingDeg) {
+        const size = aroundCanvas.width;
+        aroundCtx.clearRect(0, 0, size, size);
+        if (!vectors || vectors.length === 0) return;
+        const cx = size / 2;
+        const cy = size / 2;
+
+        const angle = (bearingDeg || 0) * Math.PI / 180.0
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+
+        let maxAbs = 0.0;
+        for (const v of vectors) {
+          maxAbs = Math.max(maxAbs, Math.abs(v.x), Math.abs(v.y));
+        }
+        if (maxAbs <= 0.000001) maxAbs = 1.0;
+        const scale = (size * 0.4) / maxAbs;
+
+        aroundCtx.save();
+        aroundCtx.fillStyle = COLORS.aroundCenter;
+        aroundCtx.beginPath();
+        aroundCtx.arc(cx, cy, 3, 0, Math.PI * 2);
+        aroundCtx.fill();
+
+        aroundCtx.strokeStyle = COLORS.aroundVector;
+        aroundCtx.lineWidth = 2;
+        const polyPoints = [];
+        for (const v of vectors) {
+          const rx = v.x * cosA - v.y * sinA;
+          const ry = v.x * sinA + v.y * cosA;
+          const ex = cx + rx * scale;
+          const ey = cy - ry * scale;
+          polyPoints.push([ex, ey]);
+          aroundCtx.beginPath();
+          aroundCtx.moveTo(cx, cy);
+          aroundCtx.lineTo(ex, ey);
+          aroundCtx.stroke();
+        }
+
+        if (polyPoints.length > 1) {
+          aroundCtx.strokeStyle = "#e4572e";
+          aroundCtx.lineWidth = 2;
+          aroundCtx.beginPath();
+          aroundCtx.moveTo(polyPoints[0][0], polyPoints[0][1]);
+          for (let i = 1; i < polyPoints.length; i += 1) {
+            aroundCtx.lineTo(polyPoints[i][0], polyPoints[i][1]);
+          }
+          aroundCtx.lineTo(polyPoints[0][0], polyPoints[0][1]);
+          aroundCtx.stroke();
+        }
+        aroundCtx.restore();
+      }
+
       async function fetchJson(url) {
         try {
           const res = await fetch(url, { cache: "no-store" });
@@ -260,12 +342,13 @@
       }
 
       async function tick() {
-        const [current, balls, visible, obstacles, waypoints] = await Promise.all([
+        const [current, balls, visible, obstacles, waypoints, robotAround] = await Promise.all([
           fetchJson("/data/current"),
           fetchJson("/data/balls"),
           fetchJson("/data/visible"),
           fetchJson("/data/obstacles"),
-          fetchJson("/data/waypoints")
+          fetchJson("/data/waypoints"),
+          fetchJson("/data/robot-around")
         ]);
 
         const robot = current && current.current ? current.current : null;
@@ -274,6 +357,7 @@
         const obstacleList = obstacles && obstacles.obstacles ? obstacles.obstacles : [];
         const dynamic = waypoints && waypoints.dynamic ? waypoints.dynamic : null;
         const stack = waypoints && waypoints.stack ? waypoints.stack : null;
+        const aroundVectors = robotAround && robotAround.vectors ? robotAround.vectors : [];
 
         drawField();
 
@@ -306,6 +390,8 @@
         if (robot) {
           drawRobot(robot.x, robot.y, robot.bearing);
         }
+
+        drawRobotAround(aroundVectors, robot ? robot.bearing : 0);
 
         robotStat.textContent = robot
           ? `Robot: (${robot.x.toFixed(2)}, ${robot.y.toFixed(2)}) ${robot.bearing !== null ? robot.bearing.toFixed(1) + "°" : ""}`
