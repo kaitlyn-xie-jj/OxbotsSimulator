@@ -348,6 +348,46 @@ def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> l
             if prev is None or dist < prev:
                 hits[direction] = dist
 
+    memory_values = {
+        "front": RADAR_MAX_RANGE,
+        "right": RADAR_MAX_RANGE,
+        "left": RADAR_MAX_RANGE,
+        "rear": RADAR_MAX_RANGE,
+    }
+    for direction, dist in hits.items():
+        if direction in memory_values:
+            memory_values[direction] = dist
+
+    sim_time = _read_time_seconds(TIME_FILE)
+    if sim_time is not None:
+        history_lines = []
+        cutoff_time = sim_time - 2
+        try:
+            with open(RADAR_HISTORY_FILE, "r") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line:
+                        continue
+                    parts = [p.strip() for p in line.split(",")]
+                    if len(parts) < 5:
+                        continue
+                    try:
+                        t = float(parts[0])
+                    except Exception:
+                        continue
+                    if cutoff_time <= t <= sim_time:
+                        history_lines.append(line)
+        except Exception:
+            pass
+
+        record = (
+            f"{sim_time:.3f},{memory_values['front']:.6f},{memory_values['right']:.6f},"
+            f"{memory_values['left']:.6f},{memory_values['rear']:.6f}"
+        )
+        history_lines.append(record)
+        _atomic_write(RADAR_HISTORY_FILE, "\n".join(history_lines) + "\n")
+
+    # print([(direction, dist) for direction, dist in hits.items()])
     return [(direction, dist) for direction, dist in hits.items()]
 
 
@@ -372,64 +412,37 @@ def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
     cx, cy, bearing = cur
 
     collision_status = _read_status(COLLISION_STATUS_FILE)
+    waypoint_status = _read_status(WAYPOINT_STATUS_FILE)
     if collision_status == "activated":
-        waypoint_status = _read_status(WAYPOINT_STATUS_FILE)
-        if waypoint_status == "going":
-            return True
         if waypoint_status == "reached":
             _write_collision_status(False)
             set_velocity(NORMAL_SPEED)
             stack_wp = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
             if stack_wp is not None:
+                _atomic_write(WAYPOINTS_STACK_FILE, "")
                 x, y, orientation = stack_wp
                 if orientation is None:
                     goto(x, y)
                 else:
                     goto(x, y, orientation)
-                _atomic_write(WAYPOINTS_STACK_FILE, "")
                 return True
+            
     radar_hits = radar_sensor()
-    sim_time = _read_time_seconds(TIME_FILE)
-    if sim_time is None:
-        _write_collision_status(False)
-        set_velocity(NORMAL_SPEED)
-        return False
 
-    values = {"front": 0.0, "right": 0.0, "left": 0.0, "rear": 0.0}
+    values = {"front": 0.8, "right": 0.8, "left": 0.8, "rear": 0.8}
     for direction, dist in radar_hits:
         if direction in values:
-            values[direction] = max(0.0, RADAR_MAX_RANGE - dist)
-
-    history_lines = []
-    cutoff_time = sim_time - 2
-    try:
-        with open(RADAR_HISTORY_FILE, "r") as f:
-            for raw in f:
-                line = raw.strip()
-                if not line:
-                    continue
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) < 5:
-                    continue
-                try:
-                    t = float(parts[0])
-                except Exception:
-                    continue
-                if t >= cutoff_time:
-                    history_lines.append(line)
-    except Exception:
-        pass
-
-    record = f"{sim_time:.3f},{values['front']:.6f},{values['right']:.6f},{values['left']:.6f},{values['rear']:.6f}"
-    history_lines.append(record)
-    _atomic_write(RADAR_HISTORY_FILE, "\n".join(history_lines) + "\n")
+            values[direction] = min(0.8, dist)
 
     if any(dist < 0.05 for _, dist in radar_hits) and bearing is not None and abs(cx) <= 0.82 and abs(cy) <= 0.82:
+        
+        # print(f"[waypoints_cruise] radar hits: {radar_hits}, values: {values}", file=sys.stderr)
+     
         weights = [
-            max(0.0, values["front"]),
-            max(0.0, values["right"]),
-            max(0.0, values["left"]),
-            max(0.0, values["rear"]),
+            values["front"],
+            values["right"],
+            values["left"],
+            values["rear"],
         ]
 
         normals_robot = [
@@ -459,17 +472,12 @@ def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
         best_vec = None
         best_mag = None
         for i, j in pair_indices:
-            vx = (RADAR_MAX_RANGE - weights[i]) * world_normals[i][0] + (RADAR_MAX_RANGE - weights[j]) * world_normals[j][0]
-            vy = (RADAR_MAX_RANGE - weights[i]) * world_normals[i][1] + (RADAR_MAX_RANGE - weights[j]) * world_normals[j][1]
+            vx = weights[i] * world_normals[i][0] + weights[j] * world_normals[j][0]
+            vy = weights[i] * world_normals[i][1] + weights[j] * world_normals[j][1]
             mag = math.hypot(vx, vy)
             if best_mag is None or mag > best_mag:
                 best_mag = mag
                 best_vec = (vx, vy)
-
-        if best_vec is None or best_mag is None or best_mag <= 1e-6:
-            _write_collision_status(False)
-            set_velocity(NORMAL_SPEED)
-            return False
 
         # Invert direction after selecting the strongest pairwise vector.
         best_vec = (best_vec[0], best_vec[1])
@@ -481,7 +489,15 @@ def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
         _write_collision_status(True)
         _stack_current_waypoint()
         # print(f"[waypoints_cruise] collision avoiding activated, radar values: {weights}, move vector: ({dx_world:.3f}, {dy_world:.3f})", file=sys.stderr)
-        return goto(cx + dx_world, cy + dy_world, bearing, waypoint_type="collision")
+        goto(cx + dx_world, cy + dy_world, bearing, waypoint_type="collision")
+        return True
+        
+    if collision_status == "activated":
+        if waypoint_status == "going":
+            return True
+
+
+    return False
 
 def _read_planned_waypoints(path: str):
     """Return list of (x, y, angle_or_none) from planned_waypoints.txt."""
