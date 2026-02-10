@@ -34,6 +34,13 @@
         grid-template-columns: 1fr 320px;
         gap: 20px;
       }
+      .radar-panel {
+        width: min(1100px, 96vw);
+        margin-top: 18px;
+        padding: 16px;
+        display: grid;
+        justify-items: center;
+      }
       .panel {
         background: rgba(255, 255, 255, 0.65);
         border: 1px solid rgba(0, 0, 0, 0.08);
@@ -92,6 +99,34 @@
         display: grid;
         justify-items: center;
       }
+      .radar-wrap {
+        width: 100%;
+        display: grid;
+        display: grid;
+        justify-items: center;
+      }
+      .radar-title {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+      }
+      .radar-legend {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px 12px;
+        font-size: 12px;
+        color: var(--muted);
+        width: min(1000px, 100%);
+      }
+      .radar-legend div {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        justify-content: center;
+      }
       .around-title {
         margin-top: 6px;
         font-size: 12px;
@@ -106,6 +141,14 @@
         border: 2px solid rgba(31, 31, 31, 0.5);
         border-radius: 10px;
         background: rgba(255, 255, 255, 0.5);
+      }
+      #radarHistory {
+        width: 100%;
+        max-width: 1000px;
+        height: 160px;
+        border: 2px solid rgba(31, 31, 31, 0.45);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.6);
       }
       @media (max-width: 900px) {
         .wrap {
@@ -139,12 +182,26 @@
         </div>
       </div>
     </div>
+    <div class="panel radar-panel">
+      <div class="radar-wrap">
+        <canvas id="radarHistory" width="1000" height="160"></canvas>
+        <div class="radar-title">radar last 2s</div>
+        <div class="radar-legend">
+          <div><span class="chip" style="background: #e4572e"></span> Front</div>
+          <div><span class="chip" style="background: #3d5a80"></span> Right</div>
+          <div><span class="chip" style="background: #1d7d7a"></span> Left</div>
+          <div><span class="chip" style="background: #6c757d"></span> Rear</div>
+        </div>
+      </div>
+    </div>
 
     <script>
       const canvas = document.getElementById("field");
       const ctx = canvas.getContext("2d");
       const aroundCanvas = document.getElementById("around");
       const aroundCtx = aroundCanvas.getContext("2d");
+      const radarCanvas = document.getElementById("radarHistory");
+      const radarCtx = radarCanvas.getContext("2d");
 
       const robotStat = document.getElementById("robotStat");
       const ballStat = document.getElementById("ballStat");
@@ -164,8 +221,16 @@
         waypointMuted: "#7a7a7a",
         aroundBox: "rgba(31, 31, 31, 0.5)",
         aroundVector: "#1d7d7a",
-        aroundCenter: "#1f1f1f"
+        aroundCenter: "#1f1f1f",
+        radarFront: "#e4572e",
+        radarRight: "#3d5a80",
+        radarLeft: "#1d7d7a",
+        radarRear: "#6c757d"
       };
+
+      const RADAR_WINDOW_SEC = 2.0;
+      const RADAR_MIN = -0.1;
+      const RADAR_MAX = 0.9;
 
       function worldToCanvas(x, y) {
         const size = canvas.width;
@@ -187,7 +252,7 @@
         const [px, py] = worldToCanvas(x, y);
         const size = canvas.width * 0.1; // 0.2m in a 2m field
         const half = size / 2;
-        const angle = (bearingDeg || 0) * Math.PI / 180.0;
+        const angle = (bearingDeg || 0) * Math.PI / 180.0 + Math.PI // Rotate to point upwards
 
         ctx.save();
         ctx.translate(px, py);
@@ -327,6 +392,75 @@
         aroundCtx.restore();
       }
 
+      function drawRadarHistory(history) {
+        const w = radarCanvas.width;
+        const h = radarCanvas.height;
+        radarCtx.clearRect(0, 0, w, h);
+        if (!history || history.length === 0) return;
+
+        const lastTime = history[history.length - 1].t;
+        const cutoff = lastTime - RADAR_WINDOW_SEC;
+        const windowed = history.filter((p) => p.t >= cutoff);
+        if (windowed.length === 0) return;
+
+        const pad = 8;
+        const plotW = w - pad * 2;
+        const plotH = h - pad * 2;
+
+        const xFor = (t) => pad + ((t - cutoff) / RADAR_WINDOW_SEC) * plotW;
+        const yFor = (v) => pad + (1 - (v - RADAR_MIN) / (RADAR_MAX - RADAR_MIN)) * plotH;
+
+        radarCtx.save();
+        radarCtx.strokeStyle = "rgba(0,0,0,0.15)";
+        radarCtx.lineWidth = 1;
+        radarCtx.strokeRect(pad, pad, plotW, plotH);
+        radarCtx.restore();
+
+        // Draw boundary lines at 0 and 0.8
+        radarCtx.save();
+        radarCtx.strokeStyle = "rgba(0,0,0,0.3)";
+        radarCtx.lineWidth = 1.5;
+        radarCtx.setLineDash([5, 3]);
+        
+        const y0 = yFor(0);
+        radarCtx.beginPath();
+        radarCtx.moveTo(pad, y0);
+        radarCtx.lineTo(pad + plotW, y0);
+        radarCtx.stroke();
+        
+        const y08 = yFor(0.8);
+        radarCtx.beginPath();
+        radarCtx.moveTo(pad, y08);
+        radarCtx.lineTo(pad + plotW, y08);
+        radarCtx.stroke();
+        radarCtx.restore();
+
+        const series = [
+          { key: "front", color: COLORS.radarFront },
+          { key: "right", color: COLORS.radarRight },
+          { key: "left", color: COLORS.radarLeft },
+          { key: "rear", color: COLORS.radarRear }
+        ];
+
+        for (const s of series) {
+          radarCtx.save();
+          radarCtx.strokeStyle = s.color;
+          radarCtx.lineWidth = 2;
+          radarCtx.beginPath();
+          windowed.forEach((p, idx) => {
+            const x = xFor(p.t);
+            const y = yFor(p[s.key]);
+            if (idx === 0) {
+              radarCtx.moveTo(x, y);
+            } else {
+              radarCtx.lineTo(x, y);
+            }
+          });
+          radarCtx.stroke();
+          radarCtx.restore();
+        }
+      }
+
       async function fetchJson(url) {
         try {
           const res = await fetch(url, { cache: "no-store" });
@@ -342,13 +476,14 @@
       }
 
       async function tick() {
-        const [current, balls, visible, obstacles, waypoints, robotAround] = await Promise.all([
+        const [current, balls, visible, obstacles, waypoints, robotAround, radarHistory] = await Promise.all([
           fetchJson("/data/current"),
           fetchJson("/data/balls"),
           fetchJson("/data/visible"),
           fetchJson("/data/obstacles"),
           fetchJson("/data/waypoints"),
-          fetchJson("/data/robot-around")
+          fetchJson("/data/robot-around"),
+          fetchJson("/data/radar-history")
         ]);
 
         const robot = current && current.current ? current.current : null;
@@ -358,6 +493,7 @@
         const dynamic = waypoints && waypoints.dynamic ? waypoints.dynamic : null;
         const stack = waypoints && waypoints.stack ? waypoints.stack : null;
         const aroundVectors = robotAround && robotAround.vectors ? robotAround.vectors : [];
+        const radarSeries = radarHistory && radarHistory.history ? radarHistory.history : [];
 
         drawField();
 
@@ -392,6 +528,7 @@
         }
 
         drawRobotAround(aroundVectors, robot ? robot.bearing : 0);
+        drawRadarHistory(radarSeries);
 
         robotStat.textContent = robot
           ? `Robot: (${robot.x.toFixed(2)}, ${robot.y.toFixed(2)}) ${robot.bearing !== null ? robot.bearing.toFixed(1) + "°" : ""}`

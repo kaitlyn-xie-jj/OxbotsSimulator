@@ -44,6 +44,7 @@ RADAR_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "radar_memory.txt")
 COLLISION_STATUS_FILE = os.path.join(os.path.dirname(__file__), "collision_avoiding_status.txt")
 DYNAMIC_WAYPOINTS_TYPE_FILE = os.path.join(os.path.dirname(__file__), "dynamic_waypoints_type.txt")
 ROBOT_AROUND_FILE = os.path.join(os.path.dirname(__file__), "robot_around.txt")
+LAST_BEST_VECTOR_FILE = os.path.join(os.path.dirname(__file__), "last_best_vector.txt")
 
 # Set the default mode here for convenience. Edit this file and set
 # `DEFAULT_MODE` to the mode you want the script to use when no CLI arg
@@ -80,7 +81,12 @@ def _atomic_write(path: str, content: str) -> bool:
 
 def _stack_current_waypoint(stack_file: str = WAYPOINTS_STACK_FILE,
                             current_file: str = DYNAMIC_WAYPOINTS_FILE) -> None:
-    """Overwrite stack file with current dynamic waypoint content, if present."""
+    """Overwrite stack file with current dynamic waypoint content and timestamp.
+    
+    Format:
+    Line 1: waypoint (x, y, orientation)
+    Line 2: timestamp (seconds)
+    """
     if _read_status(DYNAMIC_WAYPOINTS_TYPE_FILE) != "task":
         return
     try:
@@ -92,7 +98,11 @@ def _stack_current_waypoint(stack_file: str = WAYPOINTS_STACK_FILE,
     if not current:
         return
 
-    _atomic_write(stack_file, current + "\n")
+    # Get current simulation time
+    sim_time = _read_time_seconds(TIME_FILE)
+    timestamp = f"{sim_time:.3f}" if sim_time is not None else "0.000"
+    
+    _atomic_write(stack_file, current + "\n" + timestamp + "\n")
 
 
 def _write_collision_status(active: bool) -> None:
@@ -216,13 +226,21 @@ def _read_state_pair(path: str) -> Optional[tuple[float, float]]:
 
 
 def _read_stack_waypoint(path: str) -> Optional[tuple[float, float, Optional[float]]]:
-    """Return (x, y, orientation_or_none) from waypoints_stack.txt, or None."""
+    """Return (x, y, orientation_or_none) from waypoints_stack.txt, or None.
+    
+    Format:
+    Line 1: waypoint (x, y, orientation)
+    Line 2: timestamp (seconds) - ignored by this function
+    """
     try:
         with open(path, "r") as f:
-            raw = f.read().strip()
-            if not raw:
+            lines = f.readlines()
+            if not lines:
                 return None
-            line = raw
+            # Read first line only (waypoint data)
+            line = lines[0].strip()
+            if not line:
+                return None
             if line.startswith("(") and line.endswith(")"):
                 line = line[1:-1]
             parts = [p.strip() for p in line.split(",")]
@@ -236,6 +254,18 @@ def _read_stack_waypoint(path: str) -> Optional[tuple[float, float, Optional[flo
             return (x, y, orientation)
     except Exception:
         return None
+
+
+def _read_stack_timestamp(path: str) -> Optional[float]:
+    """Return timestamp from line 2 of waypoints_stack.txt, or None."""
+    try:
+        with open(path, "r") as f:
+            lines = f.readlines()
+        if len(lines) >= 2:
+            return float(lines[1].strip())
+    except Exception:
+        return None
+    return None
 
 
 def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> list[tuple[str, float]]:
@@ -261,24 +291,21 @@ def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> l
 
     obstacle_half = 0.1
     robot_half = 0.1
-    corners_local = [
-        (obstacle_half, obstacle_half),
-        (obstacle_half, -obstacle_half),
-        (-obstacle_half, obstacle_half),
-        (-obstacle_half, -obstacle_half),
-        (-obstacle_half, 0),
-        (-obstacle_half, 0.5*obstacle_half),
-        (-obstacle_half, -0.5*obstacle_half),
-        (obstacle_half, 0),
-        (obstacle_half, 0.5*obstacle_half),
-        (obstacle_half, -0.5*obstacle_half),
-        (0, -obstacle_half),
-        (0.5*obstacle_half, -obstacle_half),
-        (-0.5*obstacle_half, -obstacle_half),
-        (0, obstacle_half),
-        (0.5*obstacle_half, obstacle_half),
-        (-0.5*obstacle_half, obstacle_half),
-    ]
+    sample_spacing = 0.1 * obstacle_half  # 0.01 spacing between sample points
+    corners_local = []
+    
+    # Generate dense samples along all four edges of the obstacle
+    num_samples = int(2 * obstacle_half / sample_spacing) + 1
+    for i in range(num_samples):
+        offset = -obstacle_half + i * sample_spacing
+        # Top edge (y = obstacle_half)
+        corners_local.append((offset, obstacle_half))
+        # Bottom edge (y = -obstacle_half)
+        corners_local.append((offset, -obstacle_half))
+        # Left edge (x = -obstacle_half)
+        corners_local.append((-obstacle_half, offset))
+        # Right edge (x = obstacle_half)
+        corners_local.append((obstacle_half, offset))
 
     for ox, oy, obearing in obstacles:
         otheta = math.radians(obearing) if obearing is not None else 0.0
@@ -392,6 +419,336 @@ def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> l
     return [(direction, dist) for direction, dist in hits.items()]
 
 
+# def predict_next_radar(tau: float) -> list[tuple[str, float]]:
+#     """Predict radar distances at time t + tau using recent radar memory.
+
+#     For each direction, scan backward from the latest record and collect
+#     values until the first 0.8 is encountered (inclusive). Fit a linear
+#     regression over time and predict the distance at last_time + tau.
+#     """
+
+#     radar_sensor()  # Update radar history with current reading before prediction.
+
+#     try:
+#         with open(RADAR_HISTORY_FILE, "r") as f:
+#             lines = [line.strip() for line in f if line.strip()]
+#     except Exception:
+#         return []
+
+#     samples = []
+#     for line in lines:
+#         parts = [p.strip() for p in line.split(",")]
+#         if len(parts) < 5:
+#             continue
+#         try:
+#             t = float(parts[0])
+#             front = float(parts[1])
+#             right = float(parts[2])
+#             left = float(parts[3])
+#             rear = float(parts[4])
+#         except Exception:
+#             continue
+#         samples.append((t, front, right, left, rear))
+
+#     if not samples:
+#         return []
+
+#     last_time = samples[-1][0]
+#     directions = ["front", "right", "left", "rear"]
+#     dir_index = {"front": 1, "right": 2, "left": 3, "rear": 4}
+#     hits = {}
+
+#     for direction in directions:
+#         idx = dir_index[direction]
+#         times = []
+#         values = []
+
+#         for record in reversed(samples):
+#             t = record[0]
+#             val = record[idx]
+#             times.append(t)
+#             values.append(val)
+#             if abs(val - 0.8) <= 1e-6:
+#                 break
+
+#         if len(times) < 2:
+#             hits[direction] = values[0] if values else 0.8
+#             continue
+
+#         # Reverse to chronological order for Kalman filter
+#         times.reverse()
+#         values.reverse()
+
+#         # Kalman filter: state = [distance, velocity]
+#         # Initial state from first two points
+#         dt0 = times[1] - times[0]
+#         x = values[0]  # distance
+#         v = (values[1] - values[0]) / dt0 if dt0 > 1e-9 else 0.0  # velocity
+
+#         # State covariance
+#         P_x = 0.01
+#         P_v = 0.1
+#         P_xv = 0.0
+
+#         # Process noise
+#         Q_x = 0.001
+#         Q_v = 0.01
+
+#         # Measurement noise
+#         R = 0.005
+
+#         for i in range(1, len(times)):
+#             dt = times[i] - times[i - 1]
+#             if dt <= 1e-9:
+#                 continue
+
+#             # Predict
+#             x_pred = x + v * dt
+#             v_pred = v
+
+#             P_x_pred = P_x + 2 * P_xv * dt + P_v * dt * dt + Q_x
+#             P_v_pred = P_v + Q_v
+#             P_xv_pred = P_xv + P_v * dt
+
+#             # Update
+#             z = values[i]
+#             y = z - x_pred
+#             S = P_x_pred + R
+#             K_x = P_x_pred / S
+#             K_v = P_xv_pred / S
+
+#             x = x_pred + K_x * y
+#             v = v_pred + K_v * y
+
+#             P_x = (1 - K_x) * P_x_pred
+#             P_v = P_v_pred - K_v * P_xv_pred
+#             P_xv = (1 - K_x) * P_xv_pred
+
+#         # Predict tau seconds ahead
+#         hits[direction] = x + v * tau
+
+#     return [(direction, dist) for direction, dist in hits.items()]
+
+import math
+import statistics
+
+# Tunable parameters (adjust based on your robot speed/time resolution)
+V_MAX = 0.5          # m/s, physical upper limit for relative velocity (for gating and clipping)
+MEDIAN_WINDOW = 3    # Median filter window (frames)
+GATE_HARD = 25.0     # Hard threshold for Mahalanobis distance (discard measurement if exceeded)
+GATE_SOFT = 4.0      # Soft threshold for Mahalanobis distance (soft inflate R if exceeded)
+SOFT_R_MULT = 10.0   # Maximum multiplier for soft inflation
+MIN_SAMPLES_FOR_KF = 2
+MAX_REASONABLE_DISTANCE = 10.0  # m, values exceeding this are considered anomalous (tunable)
+
+# def predict_next_radar(tau: float) -> list[tuple[str, float]]:
+#     """Predict radar distances at time t + tau using recent radar memory.
+
+#     Improvements:
+#     - Median filter preprocessing (window size MEDIAN_WINDOW)
+#     - Velocity/Δ jump gating (based on V_MAX)
+#     - Kalman filter with innovation gating (Mahalanobis distance) and soft R inflation
+#     - Post-update velocity clipping and non-negative constraint on predicted distance
+#     """
+#     radar_sensor()  # Update radar history with current reading before prediction.
+
+#     try:
+#         with open(RADAR_HISTORY_FILE, "r") as f:
+#             lines = [line.strip() for line in f if line.strip()]
+#     except Exception:
+#         return []
+
+#     samples = []
+#     for line in lines:
+#         parts = [p.strip() for p in line.split(",")]
+#         if len(parts) < 5:
+#             continue
+#         try:
+#             t = float(parts[0])
+#             front = float(parts[1])
+#             right = float(parts[2])
+#             left = float(parts[3])
+#             rear = float(parts[4])
+#         except Exception:
+#             continue
+#         samples.append((t, front, right, left, rear))
+
+#     if not samples:
+#         return []
+
+#     last_time = samples[-1][0]
+#     directions = ["front", "right", "left", "rear"]
+#     dir_index = {"front": 1, "right": 2, "left": 3, "rear": 4}
+#     hits = {}
+
+#     for direction in directions:
+#         idx = dir_index[direction]
+#         times = []
+#         values = []
+
+#         # Backward scan until encountering 0.8 (inclusive)
+#         for record in reversed(samples):
+#             t = record[0]
+#             val = record[idx]
+#             times.append(t)
+#             values.append(val)
+#             if abs(val - 0.8) <= 1e-6:
+#                 break
+
+#         if not values:
+#             hits[direction] = 0.8
+#             continue
+
+#         # If too few samples, directly return the latest value (more stable)
+#         if len(times) < 2:
+#             hits[direction] = values[0]
+#             continue
+
+#         # Reverse back to chronological order (old to new)
+#         times.reverse()
+#         values.reverse()
+
+#         # ---- 1) Median filter preprocessing (window MEDIAN_WINDOW) ----
+#         smoothed_vals = []
+#         for i in range(len(values)):
+#             start = max(0, i - (MEDIAN_WINDOW - 1))
+#             window = values[start:i + 1]
+#             try:
+#                 med = statistics.median(window)
+#             except Exception:
+#                 med = values[i]
+#             smoothed_vals.append(med)
+
+#         # ---- 2) Rate-of-change gating: remove physically impossible jumps (mark frame as None, skip later) ----
+#         valid_times = []
+#         valid_vals = []
+#         for i in range(len(smoothed_vals)):
+#             if i == 0:
+#                 valid_times.append(times[i])
+#                 valid_vals.append(smoothed_vals[i])
+#                 continue
+#             dt = times[i] - times[i - 1]
+#             if dt <= 1e-9:
+#                 # Time anomaly, skip
+#                 continue
+#             dv = smoothed_vals[i] - smoothed_vals[i - 1]
+#             # Allow slightly more lenient change than max speed (due to measurement noise)
+#             if abs(dv) > V_MAX * dt * 1.5:
+#                 # Abnormal jump: discard sample (not used for KF update)
+#                 # Alternatively, replace with previous value (uncomment next line to choose replacement strategy)
+#                 # valid_times.append(times[i]); valid_vals.append(valid_vals[-1])
+#                 continue
+#             # Valid sample
+#             valid_times.append(times[i])
+#             valid_vals.append(smoothed_vals[i])
+
+#         if len(valid_vals) < MIN_SAMPLES_FOR_KF:
+#             # If insufficient samples after filtering, fallback to last value (stable return)
+#             hits[direction] = valid_vals[-1] if valid_vals else values[-1]
+#             continue
+
+#         # ---- 3) Standard 1D position-velocity Kalman filter, constant velocity model (state = [x, v]) ----
+#         # Initial state estimated from first two points
+#         x = valid_vals[0]
+#         dt0 = valid_times[1] - valid_times[0] if len(valid_times) > 1 else 1e-3
+#         v = (valid_vals[1] - valid_vals[0]) / dt0 if dt0 > 1e-9 else 0.0
+
+#         # Initial covariance matrix P = [[P_x, P_xv],[P_xv, P_v]]
+#         P_x = 0.05
+#         P_v = 0.05
+#         P_xv = 0.0
+
+#         # Process noise Q (corresponding to F discretization), set small but allow slow velocity changes
+#         Q_x = 1e-4
+#         Q_v = 1e-3
+#         Q_xv = 0.0
+
+#         # Base measurement noise (tunable)
+#         R_base = 0.01
+
+#         # Iterate through all subsequent observations (starting from index 1, since initial uses first two points)
+#         for i in range(1, len(valid_times)):
+#             dt = valid_times[i] - valid_times[i - 1]
+#             if dt <= 1e-9:
+#                 continue
+
+#             # ===== Prediction step =====
+#             x_pred = x + v * dt
+#             v_pred = v
+
+#             # P_pred = F P F^T + Q, with F = [[1, dt],[0,1]]
+#             P_x_pred = P_x + 2.0 * P_xv * dt + P_v * dt * dt + Q_x
+#             P_xv_pred = P_xv + P_v * dt + Q_xv
+#             P_v_pred = P_v + Q_v
+
+#             # ===== Update step (measurement is position z) =====
+#             z = valid_vals[i]
+#             y = z - x_pred  # residual
+#             S = P_x_pred + R_base  # innovation covariance (1x1)
+
+#             # Compute Mahalanobis distance (1D)
+#             if S <= 0:
+#                 S = 1e-6
+#             mahal = (y * y) / S
+
+#             # Hard gating: if residual extremely large, skip this measurement update
+#             if mahal > GATE_HARD:
+#                 # skip update, but still set predicted as prior for next step
+#                 x = x_pred
+#                 v = v_pred
+#                 P_x = P_x_pred
+#                 P_xv = P_xv_pred
+#                 P_v = P_v_pred
+#                 continue
+
+#             # Soft gating: if residual fairly large, inflate R (make update more conservative)
+#             R_eff = R_base
+#             if mahal > GATE_SOFT:
+#                 # Scale R proportionally, reduce update weight (with limit)
+#                 # Inflation factor grows with mahal, but has upper bound
+#                 factor = 1.0 + (mahal / GATE_SOFT)
+#                 if factor > SOFT_R_MULT:
+#                     factor = SOFT_R_MULT
+#                 R_eff = R_base * factor
+#                 S = P_x_pred + R_eff
+
+#             # Kalman gain K = P_pred * H^T / S  (H = [1,0])
+#             K_x = P_x_pred / S
+#             K_v = P_xv_pred / S
+
+#             # State update
+#             x = x_pred + K_x * y
+#             v = v_pred + K_v * y
+
+#             # Covariance update P = (I - K H) P_pred
+#             P_x = (1 - K_x) * P_x_pred
+#             P_xv = (1 - K_x) * P_xv_pred
+#             P_v = P_v_pred - K_v * P_xv_pred
+
+#             # Ensure covariance symmetry and non-negativity (numerical correction)
+#             if P_x < 1e-9:
+#                 P_x = 1e-9
+#             if P_v < 1e-9:
+#                 P_v = 1e-9
+
+#         # ---- 4) Predict distance at tau seconds ahead, with velocity clipping and non-negative constraint ----
+#         # First clip velocity (avoid being pulled out of physical range by outliers)
+#         if abs(v) > V_MAX:
+#             v = math.copysign(V_MAX, v)
+
+#         dist_pred = x + v * tau
+
+#         # Reasonableness constraint
+#         if dist_pred < 0.0:
+#             dist_pred = 0.0
+#         if dist_pred > MAX_REASONABLE_DISTANCE:
+#             # If predicted distance exceeds reasonable upper limit, fallback to last observed value (more conservative)
+#             dist_pred = valid_vals[-1]
+
+#         hits[direction] = dist_pred
+
+#     return [(direction, dist) for direction, dist in hits.items()]
+
 def collision_avoiding_v1(current_file: str = CURRENT_POSITION_FILE) -> bool:
     """Stop when radar detects a close obstacle inside the safe zone."""
     cur = _read_current_position(current_file)
@@ -481,11 +838,11 @@ def collision_avoiding_v2(current_file: str = CURRENT_POSITION_FILE) -> bool:
                 best_vec = (vx, vy)
 
         # Invert direction after selecting the strongest pairwise vector.
-        best_vec = (best_vec[0], best_vec[1])
+        best_vec = (best_vec[0]/best_mag, best_vec[1]/best_mag)
 
         step = 0.15
-        dx_world = step * (best_vec[0] / best_mag)
-        dy_world = step * (best_vec[1] / best_mag)
+        dx_world = step * best_vec[0]
+        dy_world = step * best_vec[1]
         set_velocity(MAX_SPEED)
         _write_collision_status(True)
         _stack_current_waypoint()
@@ -510,12 +867,25 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
 
     collision_status = _read_status(COLLISION_STATUS_FILE)
     waypoint_status = _read_status(WAYPOINT_STATUS_FILE)
+    abandon_time_threshold = 5.0  # seconds, if stacked waypoint is older than this, abandon it to avoid going to stale location
     if collision_status == "activated":
         if waypoint_status == "reached":
             _write_collision_status(False)
             set_velocity(NORMAL_SPEED)
             stack_wp = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
             if stack_wp is not None:
+                # Check if stacked waypoint is too old
+                stack_timestamp = _read_stack_timestamp(WAYPOINTS_STACK_FILE)
+                current_time = _read_time_seconds(TIME_FILE)
+                
+                if stack_timestamp is not None and current_time is not None:
+                    time_elapsed = current_time - stack_timestamp
+                    if time_elapsed > abandon_time_threshold:
+                        # Waypoint is too old, abandon it
+                        _atomic_write(WAYPOINTS_STACK_FILE, "")
+                        return True  # Don't goto anywhere, just return
+                
+                # Waypoint is still valid, proceed as normal
                 _atomic_write(WAYPOINTS_STACK_FILE, "")
                 x, y, orientation = stack_wp
                 if orientation is None:
@@ -523,8 +893,11 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
                 else:
                     goto(x, y, orientation)
                 return True
+    if collision_status == "inactive":
+        _atomic_write(LAST_BEST_VECTOR_FILE, "")
             
     radar_hits = radar_sensor()
+    # radar_hits = predict_next_radar(tau=0.01)
 
     values = {"front": 0.8, "right": 0.8, "left": 0.8, "rear": 0.8}
     for direction, dist in radar_hits:
@@ -543,7 +916,7 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
         for key, val in values.items()
     }
     weights_rob_around = {
-        key: value for key, value in weights_rob_around.items()
+        key: value - 0 for key, value in weights_rob_around.items()
     }
 
     weighted_vectors = []
@@ -559,21 +932,21 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
 
     if any(dist < trigger_distance for _, dist in radar_hits) and bearing is not None and abs(cx) <= 0.82 and abs(cy) <= 0.82:
         
-        destination_vector = (-cx, -cy)
-        # dynamic_type = _read_status(DYNAMIC_WAYPOINTS_TYPE_FILE)
-        # if dynamic_type == "task":
-        #     dynamic_wp = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
-        #     if dynamic_wp is not None:
-        #         destination_vector = (dynamic_wp[0] - cx, dynamic_wp[1] - cy)
-        # elif dynamic_type == "collision":
-        #     stacked_wp = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
-        #     if stacked_wp is not None:
-        #         destination_vector = (stacked_wp[0] - cx, stacked_wp[1] - cy)
+        destination_vector = None
+        dynamic_type = _read_status(DYNAMIC_WAYPOINTS_TYPE_FILE)
+        if dynamic_type == "task":
+            dynamic_wp = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
+            if dynamic_wp is not None:
+                destination_vector = (dynamic_wp[0] - cx, dynamic_wp[1] - cy)
+        elif dynamic_type == "collision":
+            stacked_wp = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
+            if stacked_wp is not None:
+                destination_vector = (stacked_wp[0] - cx, stacked_wp[1] - cy)
 
 
-        dynamic_wp = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
-        if dynamic_wp is not None:
-            destination_vector = (dynamic_wp[0] - cx, dynamic_wp[1] - cy)
+        # dynamic_wp = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
+        # if dynamic_wp is not None:
+        #     destination_vector = (dynamic_wp[0] - cx, dynamic_wp[1] - cy)
 
 
         dest_mag = math.hypot(destination_vector[0], destination_vector[1])
@@ -595,14 +968,85 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
         if not filtered_vectors:
             filtered_vectors = weighted_vectors_world
 
-        # Select the vector with the largest projection onto the destination vector.
-        best_vec = max(
-            filtered_vectors,
-            key=lambda v: v[0] * destination_vector[0] + v[1] * destination_vector[1],
-        )
-        best_mag = math.hypot(best_vec[0], best_vec[1])
+        normals_robot = [
+            (1.0, 0.0),   # front
+            (0.0, -1.0),  # right
+            (0.0, 1.0),   # left
+            (-1.0, 0.0),  # rear
+        ]
+        theta = math.radians(bearing)
+        cos_t = math.cos(theta)
+        sin_t = math.sin(theta)
+
+        total_w = sum(values.values())
+        if total_w <= 0.0:
+            _write_collision_status(False)
+            set_velocity(NORMAL_SPEED)
+            return False
+
+        world_normals = []
+        for (nx, ny) in normals_robot:
+            wx = nx * cos_t - ny * sin_t
+            wy = nx * sin_t + ny * cos_t
+            world_normals.append((wx, wy))
+
+        # Pairwise sums: front+left, left+rear, rear+right, right+front.
+        pair_indices = [(0, 2), (2, 3), (3, 1), (1, 0)]
+        safest_vec = None
+        safest_mag = None
+        ordered_values = [
+            values["front"],
+            values["right"],
+            values["left"],
+            values["rear"],
+        ]
+        for i, j in pair_indices:
+            vx = ordered_values[i] * world_normals[i][0] + ordered_values[j] * world_normals[j][0]
+            vy = ordered_values[i] * world_normals[i][1] + ordered_values[j] * world_normals[j][1]
+            mag = math.hypot(vx, vy)
+            if safest_mag is None or mag > safest_mag:
+                safest_mag = mag
+                safest_vec = (vx, vy)
 
         # Invert direction after selecting the strongest pairwise vector.
+        safest_vec = (safest_vec[0]/safest_mag, safest_vec[1]/safest_mag)
+
+        # Score each vector by its projection onto the destination vector.
+        last_best_vec = _read_stack_waypoint(LAST_BEST_VECTOR_FILE)
+        best_vec = None
+        best_score = None
+        
+        # Calculate minimum radar distance for scoring weight
+        min_radar_distance = max(0, min(values.values()))
+        # safety_factor = 8 + (1 + (min_radar_distance / trigger_distance)) * 20 if trigger_distance > 0 else 10.0
+        safety_factor = 20
+        # print(f"Safety factor: {safety_factor}, min radar distance: {min_radar_distance}, trigger distance: {trigger_distance}", file=sys.stderr)
+
+        for vec in filtered_vectors:
+            score = 0.0
+            score += (vec[0] * safest_vec[0] + vec[1] * safest_vec[1]) * safety_factor
+            # First time avoiding: only consider destination alignment to encourage moving towards the goal.
+            if last_best_vec is None:
+                if destination_vector is not None:
+                    score += (vec[0] * destination_vector[0] + vec[1] * destination_vector[1]) * 0
+            #  Not the first time: consider last best direction to encourage stability, and also consider destination alignment but with lower weight to avoid oscillation.
+            if last_best_vec is not None:
+                score += (vec[0] * last_best_vec[0] + vec[1] * last_best_vec[1]) * 0
+                if destination_vector is not None:
+                    score += (vec[0] * destination_vector[0] + vec[1] * destination_vector[1]) * 0
+
+            if best_score is None or score > best_score:
+                best_score = score
+                best_vec = vec
+                # print(f"[waypoints_cruise] best vector: ({vec[0]:.3f}, {vec[1]:.3f}), score: {score:.6f}", file=sys.stderr)
+
+        _atomic_write(
+            LAST_BEST_VECTOR_FILE,
+            f"({best_vec[0]:.6f}, {best_vec[1]:.6f})\n",
+        )
+
+        # Invert direction after selecting the strongest pairwise vector.
+        best_mag = math.hypot(best_vec[0], best_vec[1])
         best_vec = (best_vec[0], best_vec[1])
 
         dx_world = jump_step * (best_vec[0] / best_mag)
@@ -611,7 +1055,31 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
         _write_collision_status(True)
         _stack_current_waypoint()
         # print(f"[waypoints_cruise] collision avoiding activated, radar values: {weights}, move vector: ({dx_world:.3f}, {dy_world:.3f})", file=sys.stderr)
-        goto(cx + dx_world, cy + dy_world, bearing, waypoint_type="collision")
+
+        # Determine orientation based on waypoint hierarchy
+        target_orientation = bearing  # Default to current bearing
+        target_x = cx + dx_world
+        target_y = cy + dy_world
+        
+        if dynamic_type == "task":
+            # If current waypoint is task, point towards dynamic waypoint
+            dynamic_waypoint = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
+            if dynamic_waypoint is not None:
+                dx_to_goal = dynamic_waypoint[0] - target_x
+                dy_to_goal = dynamic_waypoint[1] - target_y
+                target_orientation = math.degrees(math.atan2(dy_to_goal, dx_to_goal))
+        else:
+            # If not task, check if stack waypoint exists and point towards it
+            stack_waypoint = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
+            if stack_waypoint is not None:
+                dx_to_goal = stack_waypoint[0] - target_x
+                dy_to_goal = stack_waypoint[1] - target_y
+                target_orientation = math.degrees(math.atan2(dy_to_goal, dx_to_goal))
+
+        if abs(cx + dx_world) < 0.9 and abs(cy + dy_world) < 0.9:
+            goto(cx + dx_world, cy + dy_world, target_orientation, waypoint_type="collision")
+        else:
+            stop("collision")
 
         return True
         
@@ -844,7 +1312,7 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
                           current_file: str = CURRENT_POSITION_FILE) -> int:
     """Improved nearest mode: choose nearest ball from visible_balls.txt only."""
 
-    if collision_avoiding_v2(current_file):
+    if collision_avoiding_v3(current_file):
         return 0
 
     sim_time = _read_time_seconds(TIME_FILE)
@@ -952,65 +1420,66 @@ def mode_developing(status_file: str = WAYPOINT_STATUS_FILE,
                     current_file: str = CURRENT_POSITION_FILE) -> int:
     """Developing mode: for testing and development purposes.
     
-    这个函数供开发者测试新功能。下面是可用的工具函数说明：
+    This function is for developers to test new features. Available utility functions are documented below.
     
     Returns 0 on success, non-zero on error.
     """
     status = _read_status(status_file)
 
-    # 如果状态不是 "reached"，则不执行任何操作，直接返回 0
-    # 这确保了开发模式下的逻辑只在机器人到达当前目标点后才会执行，避免干扰正常的巡航行为。
-    # 只有紧急状态下才会覆盖当前目标点，比如检测到碰撞要紧急避障，
-    # 可以直接调用 goto() 设置新的目标点，无需等待状态变为 "reached"。
+    # If status is not "reached", do nothing and return 0
+    # This ensures development mode logic only executes after the robot reaches the current target,
+    # avoiding interference with normal cruise behavior.
+    # Only in emergency situations (e.g., collision detection requiring immediate avoidance)
+    # should you call goto() to set a new target without waiting for "reached" status.
     if status != "reached":
         return 0
     
-    # ==================== 开发指南 ====================
+    # ==================== Development Guide ====================
     
-    # 1. 获取当前机器人位置（返回 (x, y, bearing_deg) 或 None）
-    #    bearing_deg 是角度制的朝向角度
+    # 1. Get current robot position (returns (x, y, bearing_deg) or None)
+    #    bearing_deg is the heading angle in degrees
     cur_pos = _read_current_position(CURRENT_POSITION_FILE)
     if cur_pos:
         x, y, bearing = cur_pos
-        # print(f"当前位置: x={x:.3f}, y={y:.3f}, bearing={bearing}°")
+        # print(f"Current position: x={x:.3f}, y={y:.3f}, bearing={bearing}°")
     
-    # 2. 获取所有小球的位置和类型（返回 [(x, y, type), ...] 列表）
-    #    type 是 'PING' 或 'METAL'
+    # 2. Get all ball positions and types (returns [(x, y, type), ...] list)
+    #    type is 'PING' or 'METAL'
     balls = _read_ball_positions(BALL_POS_FILE)
     # for ball_x, ball_y, ball_type in balls:
-    #     print(f"小球: x={ball_x:.3f}, y={ball_y:.3f}, 类型={ball_type}")
+    #     print(f"Ball: x={ball_x:.3f}, y={ball_y:.3f}, type={ball_type}")
     
-    # 3. 获取所有障碍机器人的位置（返回 [(x, y), ...] 列表）
+    # 3. Get all obstacle robot positions (returns [(x, y), ...] list)
     obstacles = _read_obstacle_positions(OBSTACLE_ROBOT_FILE)
     # for obs_x, obs_y in obstacles:
-    #     print(f"障碍机器人: x={obs_x:.3f}, y={obs_y:.3f}")
+    #     print(f"Obstacle robot: x={obs_x:.3f}, y={obs_y:.3f}")
 
-    # 4. 获取当前仿真时间（秒）
+    # 4. Get current simulation time (seconds)
     sim_time = _read_time_seconds(TIME_FILE)
     # if sim_time is not None:
-    #     print(f"当前仿真时间: {sim_time:.3f} s")
+    #     print(f"Current simulation time: {sim_time:.3f} s")
     
-    # 5. 使用 goto() 函数设置目标点
-    #    goto(x, y) - 只设置位置
-    #    goto(x, y, orientation) - 设置位置和朝向（orientation 是角度制）
-    #    返回 True 表示成功，False 表示失败
+    # 5. Use goto() function to set target waypoint
+    #    goto(x, y) - set position only
+    #    goto(x, y, orientation) - set position and heading (orientation in degrees)
+    #    Returns True on success, False on failure
     
-    # 示例：前往第一个小球的位置
+    # Example: Go to the first ball's position
     # if balls:
     #     target_x, target_y, _ = balls[0]
     #     ok = goto(target_x, target_y)
     #     if ok:
-    #         print(f"设置目标点成功: ({target_x:.3f}, {target_y:.3f})")
+    #         print(f"Target set successfully: ({target_x:.3f}, {target_y:.3f})")
     
-    # 示例：前往指定位置并设置朝向为 90 度
+    # Example: Go to specified position with 90-degree heading
     # ok = goto(0.5, 0.3, 90.0)
     
-    # 示例：前往原点
+    # Example: Go to origin
     # ok = goto(0.0, 0.0)
     
-    # ==================== 在此处添加你的逻辑 ====================
+    # ==================== Add Your Logic Here ====================
     
-    # TODO: 添加你的开发代码
+    # TODO: Add your development code
     
     return 0
 

@@ -26,6 +26,9 @@ STACK_FILE = os.path.abspath(
 ROBOT_AROUND_FILE = os.path.abspath(
     os.path.join(ROOT_DIR, "..", "..", "decision_making", "robot_around.txt")
 )
+RADAR_HISTORY_FILE = os.path.abspath(
+    os.path.join(ROOT_DIR, "..", "..", "decision_making", "radar_memory.txt")
+)
 
 
 def _read_lines(path: str) -> list[str]:
@@ -167,6 +170,30 @@ def _get_robot_around():
     return out
 
 
+def _get_radar_history():
+    out = []
+    for line in _read_lines(RADAR_HISTORY_FILE):
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 5:
+            continue
+        try:
+            t = float(parts[0])
+            front = float(parts[1])
+            right = float(parts[2])
+            left = float(parts[3])
+            rear = float(parts[4])
+        except Exception:
+            continue
+        out.append({
+            "t": t,
+            "front": front,
+            "right": right,
+            "left": left,
+            "rear": rear,
+        })
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, payload, status=200):
         body = json.dumps(payload).encode("utf-8")
@@ -213,6 +240,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/data/robot-around":
             self._send_json({"vectors": _get_robot_around()})
+            return
+        if path == "/data/radar-history":
+            self._send_json({"history": _get_radar_history()})
             return
 
         self._send_text("not found", 404, "text/plain")
