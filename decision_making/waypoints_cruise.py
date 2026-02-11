@@ -1018,8 +1018,8 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
         
         # Calculate minimum radar distance for scoring weight
         min_radar_distance = max(0, min(values.values()))
-        # safety_factor = 8 + (1 + (min_radar_distance / trigger_distance)) * 20 if trigger_distance > 0 else 10.0
-        safety_factor = 20
+        safety_factor = 8 + (min_radar_distance / trigger_distance) * 20 if trigger_distance > 0 else 10.0
+        # safety_factor = 20
         # print(f"Safety factor: {safety_factor}, min radar distance: {min_radar_distance}, trigger distance: {trigger_distance}", file=sys.stderr)
 
         for vec in filtered_vectors:
@@ -1028,12 +1028,12 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
             # First time avoiding: only consider destination alignment to encourage moving towards the goal.
             if last_best_vec is None:
                 if destination_vector is not None:
-                    score += (vec[0] * destination_vector[0] + vec[1] * destination_vector[1]) * 0
+                    score += (vec[0] * destination_vector[0] + vec[1] * destination_vector[1]) * 6
             #  Not the first time: consider last best direction to encourage stability, and also consider destination alignment but with lower weight to avoid oscillation.
             if last_best_vec is not None:
-                score += (vec[0] * last_best_vec[0] + vec[1] * last_best_vec[1]) * 0
+                score += (vec[0] * last_best_vec[0] + vec[1] * last_best_vec[1]) * 6
                 if destination_vector is not None:
-                    score += (vec[0] * destination_vector[0] + vec[1] * destination_vector[1]) * 0
+                    score += (vec[0] * destination_vector[0] + vec[1] * destination_vector[1]) * 6
 
             if best_score is None or score > best_score:
                 best_score = score
@@ -1061,20 +1061,22 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE) -> bool:
         target_x = cx + dx_world
         target_y = cy + dy_world
         
-        if dynamic_type == "task":
-            # If current waypoint is task, point towards dynamic waypoint
-            dynamic_waypoint = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
-            if dynamic_waypoint is not None:
-                dx_to_goal = dynamic_waypoint[0] - target_x
-                dy_to_goal = dynamic_waypoint[1] - target_y
-                target_orientation = math.degrees(math.atan2(dy_to_goal, dx_to_goal))
-        else:
-            # If not task, check if stack waypoint exists and point towards it
-            stack_waypoint = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
-            if stack_waypoint is not None:
-                dx_to_goal = stack_waypoint[0] - target_x
-                dy_to_goal = stack_waypoint[1] - target_y
-                target_orientation = math.degrees(math.atan2(dy_to_goal, dx_to_goal))
+        if min_radar_distance / trigger_distance > 0.7:
+            # If obstacle is not too close, try to orient towards the task waypoint to encourage progress
+          if dynamic_type == "task":
+              # If current waypoint is task, point towards dynamic waypoint
+              dynamic_waypoint = _read_stack_waypoint(DYNAMIC_WAYPOINTS_FILE)
+              if dynamic_waypoint is not None:
+                  dx_to_goal = dynamic_waypoint[0] - target_x
+                  dy_to_goal = dynamic_waypoint[1] - target_y
+                  target_orientation = math.degrees(math.atan2(dy_to_goal, dx_to_goal))
+          else:
+              # If not task, check if stack waypoint exists and point towards it
+              stack_waypoint = _read_stack_waypoint(WAYPOINTS_STACK_FILE)
+              if stack_waypoint is not None:
+                  dx_to_goal = stack_waypoint[0] - target_x
+                  dy_to_goal = stack_waypoint[1] - target_y
+                  target_orientation = math.degrees(math.atan2(dy_to_goal, dx_to_goal))
 
         if abs(cx + dx_world) < 0.9 and abs(cy + dy_world) < 0.9:
             goto(cx + dx_world, cy + dy_world, target_orientation, waypoint_type="collision")
