@@ -50,7 +50,7 @@ LAST_BEST_VECTOR_FILE = os.path.join(os.path.dirname(__file__), "real_time_data"
 
 # Set the default mode here for convenience. Edit this file and set
 # `DEFAULT_MODE` to the mode you want the script to use when no CLI arg
-# or `MODE` environment variable is provided. Example: 'random', 'nearest', 'improved_nearest', 'planned' or 'developing'.
+# or `MODE` environment variable is provided. Example: 'random', 'nearest', 'realistic_nearest', 'planned' or 'developing'.
 DEFAULT_MODE = 'improved_nearest'
 
 # generation bounds (match supervisor playground bounds)
@@ -270,6 +270,120 @@ def _read_stack_timestamp(path: str) -> Optional[float]:
     return None
 
 
+def in_view(point,
+            FOV: float = 60.0,
+            Range: float = 0.8,
+            current_file: str = CURRENT_POSITION_FILE,
+            obstacle_file: str = OBSTACLE_ROBOT_FILE) -> bool:
+    """Return whether robot can see a world point, considering FOV/range/occlusion.
+
+    - If point is outside field bounds [-1, 1] x [-1, 1], return False.
+    - Visibility is constrained by robot pose, FOV (degrees), and Range (meters).
+    - Obstacles are modeled as 0.2 x 0.2 squares centered at obstacle positions,
+      rotated by each obstacle bearing (if missing, 0 deg).
+    """
+
+    def _cross(ax: float, ay: float, bx: float, by: float) -> float:
+        return ax * by - ay * bx
+
+    def _segment_intersects(p1, p2, q1, q2, eps: float = 1e-9) -> bool:
+        x1, y1 = p1
+        x2, y2 = p2
+        x3, y3 = q1
+        x4, y4 = q2
+
+        d1x, d1y = (x2 - x1), (y2 - y1)
+        d2x, d2y = (x4 - x3), (y4 - y3)
+        denom = _cross(d1x, d1y, d2x, d2y)
+        qpx, qpy = (x3 - x1), (y3 - y1)
+
+        if abs(denom) <= eps:
+            # Parallel / collinear
+            if abs(_cross(qpx, qpy, d1x, d1y)) > eps:
+                return False
+
+            # Collinear overlap check using projection onto dominant axis
+            if abs(d1x) >= abs(d1y):
+                a_min, a_max = sorted((x1, x2))
+                b_min, b_max = sorted((x3, x4))
+            else:
+                a_min, a_max = sorted((y1, y2))
+                b_min, b_max = sorted((y3, y4))
+            return max(a_min, b_min) <= min(a_max, b_max) + eps
+
+        t = _cross(qpx, qpy, d2x, d2y) / denom
+        u = _cross(qpx, qpy, d1x, d1y) / denom
+        return (-eps <= t <= 1.0 + eps) and (-eps <= u <= 1.0 + eps)
+
+    try:
+        px = float(point[0])
+        py = float(point[1])
+    except Exception:
+        return False
+
+    # Out of field bounds => invisible.
+    if abs(px) > 1.0 or abs(py) > 1.0:
+        return False
+
+    cur = _read_current_position(current_file)
+    if cur is None:
+        return False
+    cx, cy, bearing = cur
+    if bearing is None:
+        return False
+
+    if Range <= 0.0 or FOV <= 0.0:
+        return False
+
+    dx = px - cx
+    dy = py - cy
+    dist = math.hypot(dx, dy)
+    if dist > Range:
+        return False
+
+    # FOV check around current bearing.
+    target_angle = math.atan2(dy, dx)
+    heading = math.radians(bearing)
+    angle_diff = math.atan2(math.sin(target_angle - heading), math.cos(target_angle - heading))
+    if abs(angle_diff) > math.radians(FOV) * 0.5:
+        return False
+
+    # Occlusion by obstacle robots (0.2 x 0.2 square).
+    obstacles = _read_obstacle_positions(obstacle_file)
+    if not obstacles:
+        return True
+
+    line_start = (cx, cy)
+    line_end = (px, py)
+    half = 0.1
+    half_diag = math.sqrt(2.0) * half
+
+    for ox, oy, obearing in obstacles:
+        # Quick reject: obstacle too far beyond target to intersect line-of-sight.
+        if math.hypot(ox - cx, oy - cy) > dist + half_diag:
+            continue
+
+        theta = math.radians(obearing) if obearing is not None else 0.0
+        cos_t = math.cos(theta)
+        sin_t = math.sin(theta)
+
+        local_corners = [(-half, -half), (half, -half), (half, half), (-half, half)]
+        corners = []
+        for lx, ly in local_corners:
+            wx = ox + lx * cos_t - ly * sin_t
+            wy = oy + lx * sin_t + ly * cos_t
+            corners.append((wx, wy))
+
+        # If line of sight intersects any edge of this square, point is occluded.
+        for i in range(4):
+            a = corners[i]
+            b = corners[(i + 1) % 4]
+            if _segment_intersects(line_start, line_end, a, b):
+                return False
+
+    return True
+
+
 def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> list[tuple[str, float]]:
     """Return obstacle directions and distances in robot frame.
 
@@ -420,336 +534,6 @@ def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> l
     # print([(direction, dist) for direction, dist in hits.items()])
     return [(direction, dist) for direction, dist in hits.items()]
 
-
-# def predict_next_radar(tau: float) -> list[tuple[str, float]]:
-#     """Predict radar distances at time t + tau using recent radar memory.
-
-#     For each direction, scan backward from the latest record and collect
-#     values until the first 0.8 is encountered (inclusive). Fit a linear
-#     regression over time and predict the distance at last_time + tau.
-#     """
-
-#     radar_sensor()  # Update radar history with current reading before prediction.
-
-#     try:
-#         with open(RADAR_HISTORY_FILE, "r") as f:
-#             lines = [line.strip() for line in f if line.strip()]
-#     except Exception:
-#         return []
-
-#     samples = []
-#     for line in lines:
-#         parts = [p.strip() for p in line.split(",")]
-#         if len(parts) < 5:
-#             continue
-#         try:
-#             t = float(parts[0])
-#             front = float(parts[1])
-#             right = float(parts[2])
-#             left = float(parts[3])
-#             rear = float(parts[4])
-#         except Exception:
-#             continue
-#         samples.append((t, front, right, left, rear))
-
-#     if not samples:
-#         return []
-
-#     last_time = samples[-1][0]
-#     directions = ["front", "right", "left", "rear"]
-#     dir_index = {"front": 1, "right": 2, "left": 3, "rear": 4}
-#     hits = {}
-
-#     for direction in directions:
-#         idx = dir_index[direction]
-#         times = []
-#         values = []
-
-#         for record in reversed(samples):
-#             t = record[0]
-#             val = record[idx]
-#             times.append(t)
-#             values.append(val)
-#             if abs(val - 0.8) <= 1e-6:
-#                 break
-
-#         if len(times) < 2:
-#             hits[direction] = values[0] if values else 0.8
-#             continue
-
-#         # Reverse to chronological order for Kalman filter
-#         times.reverse()
-#         values.reverse()
-
-#         # Kalman filter: state = [distance, velocity]
-#         # Initial state from first two points
-#         dt0 = times[1] - times[0]
-#         x = values[0]  # distance
-#         v = (values[1] - values[0]) / dt0 if dt0 > 1e-9 else 0.0  # velocity
-
-#         # State covariance
-#         P_x = 0.01
-#         P_v = 0.1
-#         P_xv = 0.0
-
-#         # Process noise
-#         Q_x = 0.001
-#         Q_v = 0.01
-
-#         # Measurement noise
-#         R = 0.005
-
-#         for i in range(1, len(times)):
-#             dt = times[i] - times[i - 1]
-#             if dt <= 1e-9:
-#                 continue
-
-#             # Predict
-#             x_pred = x + v * dt
-#             v_pred = v
-
-#             P_x_pred = P_x + 2 * P_xv * dt + P_v * dt * dt + Q_x
-#             P_v_pred = P_v + Q_v
-#             P_xv_pred = P_xv + P_v * dt
-
-#             # Update
-#             z = values[i]
-#             y = z - x_pred
-#             S = P_x_pred + R
-#             K_x = P_x_pred / S
-#             K_v = P_xv_pred / S
-
-#             x = x_pred + K_x * y
-#             v = v_pred + K_v * y
-
-#             P_x = (1 - K_x) * P_x_pred
-#             P_v = P_v_pred - K_v * P_xv_pred
-#             P_xv = (1 - K_x) * P_xv_pred
-
-#         # Predict tau seconds ahead
-#         hits[direction] = x + v * tau
-
-#     return [(direction, dist) for direction, dist in hits.items()]
-
-import math
-import statistics
-
-# Tunable parameters (adjust based on your robot speed/time resolution)
-V_MAX = 0.5          # m/s, physical upper limit for relative velocity (for gating and clipping)
-MEDIAN_WINDOW = 3    # Median filter window (frames)
-GATE_HARD = 25.0     # Hard threshold for Mahalanobis distance (discard measurement if exceeded)
-GATE_SOFT = 4.0      # Soft threshold for Mahalanobis distance (soft inflate R if exceeded)
-SOFT_R_MULT = 10.0   # Maximum multiplier for soft inflation
-MIN_SAMPLES_FOR_KF = 2
-MAX_REASONABLE_DISTANCE = 10.0  # m, values exceeding this are considered anomalous (tunable)
-
-# def predict_next_radar(tau: float) -> list[tuple[str, float]]:
-#     """Predict radar distances at time t + tau using recent radar memory.
-
-#     Improvements:
-#     - Median filter preprocessing (window size MEDIAN_WINDOW)
-#     - Velocity/Δ jump gating (based on V_MAX)
-#     - Kalman filter with innovation gating (Mahalanobis distance) and soft R inflation
-#     - Post-update velocity clipping and non-negative constraint on predicted distance
-#     """
-#     radar_sensor()  # Update radar history with current reading before prediction.
-
-#     try:
-#         with open(RADAR_HISTORY_FILE, "r") as f:
-#             lines = [line.strip() for line in f if line.strip()]
-#     except Exception:
-#         return []
-
-#     samples = []
-#     for line in lines:
-#         parts = [p.strip() for p in line.split(",")]
-#         if len(parts) < 5:
-#             continue
-#         try:
-#             t = float(parts[0])
-#             front = float(parts[1])
-#             right = float(parts[2])
-#             left = float(parts[3])
-#             rear = float(parts[4])
-#         except Exception:
-#             continue
-#         samples.append((t, front, right, left, rear))
-
-#     if not samples:
-#         return []
-
-#     last_time = samples[-1][0]
-#     directions = ["front", "right", "left", "rear"]
-#     dir_index = {"front": 1, "right": 2, "left": 3, "rear": 4}
-#     hits = {}
-
-#     for direction in directions:
-#         idx = dir_index[direction]
-#         times = []
-#         values = []
-
-#         # Backward scan until encountering 0.8 (inclusive)
-#         for record in reversed(samples):
-#             t = record[0]
-#             val = record[idx]
-#             times.append(t)
-#             values.append(val)
-#             if abs(val - 0.8) <= 1e-6:
-#                 break
-
-#         if not values:
-#             hits[direction] = 0.8
-#             continue
-
-#         # If too few samples, directly return the latest value (more stable)
-#         if len(times) < 2:
-#             hits[direction] = values[0]
-#             continue
-
-#         # Reverse back to chronological order (old to new)
-#         times.reverse()
-#         values.reverse()
-
-#         # ---- 1) Median filter preprocessing (window MEDIAN_WINDOW) ----
-#         smoothed_vals = []
-#         for i in range(len(values)):
-#             start = max(0, i - (MEDIAN_WINDOW - 1))
-#             window = values[start:i + 1]
-#             try:
-#                 med = statistics.median(window)
-#             except Exception:
-#                 med = values[i]
-#             smoothed_vals.append(med)
-
-#         # ---- 2) Rate-of-change gating: remove physically impossible jumps (mark frame as None, skip later) ----
-#         valid_times = []
-#         valid_vals = []
-#         for i in range(len(smoothed_vals)):
-#             if i == 0:
-#                 valid_times.append(times[i])
-#                 valid_vals.append(smoothed_vals[i])
-#                 continue
-#             dt = times[i] - times[i - 1]
-#             if dt <= 1e-9:
-#                 # Time anomaly, skip
-#                 continue
-#             dv = smoothed_vals[i] - smoothed_vals[i - 1]
-#             # Allow slightly more lenient change than max speed (due to measurement noise)
-#             if abs(dv) > V_MAX * dt * 1.5:
-#                 # Abnormal jump: discard sample (not used for KF update)
-#                 # Alternatively, replace with previous value (uncomment next line to choose replacement strategy)
-#                 # valid_times.append(times[i]); valid_vals.append(valid_vals[-1])
-#                 continue
-#             # Valid sample
-#             valid_times.append(times[i])
-#             valid_vals.append(smoothed_vals[i])
-
-#         if len(valid_vals) < MIN_SAMPLES_FOR_KF:
-#             # If insufficient samples after filtering, fallback to last value (stable return)
-#             hits[direction] = valid_vals[-1] if valid_vals else values[-1]
-#             continue
-
-#         # ---- 3) Standard 1D position-velocity Kalman filter, constant velocity model (state = [x, v]) ----
-#         # Initial state estimated from first two points
-#         x = valid_vals[0]
-#         dt0 = valid_times[1] - valid_times[0] if len(valid_times) > 1 else 1e-3
-#         v = (valid_vals[1] - valid_vals[0]) / dt0 if dt0 > 1e-9 else 0.0
-
-#         # Initial covariance matrix P = [[P_x, P_xv],[P_xv, P_v]]
-#         P_x = 0.05
-#         P_v = 0.05
-#         P_xv = 0.0
-
-#         # Process noise Q (corresponding to F discretization), set small but allow slow velocity changes
-#         Q_x = 1e-4
-#         Q_v = 1e-3
-#         Q_xv = 0.0
-
-#         # Base measurement noise (tunable)
-#         R_base = 0.01
-
-#         # Iterate through all subsequent observations (starting from index 1, since initial uses first two points)
-#         for i in range(1, len(valid_times)):
-#             dt = valid_times[i] - valid_times[i - 1]
-#             if dt <= 1e-9:
-#                 continue
-
-#             # ===== Prediction step =====
-#             x_pred = x + v * dt
-#             v_pred = v
-
-#             # P_pred = F P F^T + Q, with F = [[1, dt],[0,1]]
-#             P_x_pred = P_x + 2.0 * P_xv * dt + P_v * dt * dt + Q_x
-#             P_xv_pred = P_xv + P_v * dt + Q_xv
-#             P_v_pred = P_v + Q_v
-
-#             # ===== Update step (measurement is position z) =====
-#             z = valid_vals[i]
-#             y = z - x_pred  # residual
-#             S = P_x_pred + R_base  # innovation covariance (1x1)
-
-#             # Compute Mahalanobis distance (1D)
-#             if S <= 0:
-#                 S = 1e-6
-#             mahal = (y * y) / S
-
-#             # Hard gating: if residual extremely large, skip this measurement update
-#             if mahal > GATE_HARD:
-#                 # skip update, but still set predicted as prior for next step
-#                 x = x_pred
-#                 v = v_pred
-#                 P_x = P_x_pred
-#                 P_xv = P_xv_pred
-#                 P_v = P_v_pred
-#                 continue
-
-#             # Soft gating: if residual fairly large, inflate R (make update more conservative)
-#             R_eff = R_base
-#             if mahal > GATE_SOFT:
-#                 # Scale R proportionally, reduce update weight (with limit)
-#                 # Inflation factor grows with mahal, but has upper bound
-#                 factor = 1.0 + (mahal / GATE_SOFT)
-#                 if factor > SOFT_R_MULT:
-#                     factor = SOFT_R_MULT
-#                 R_eff = R_base * factor
-#                 S = P_x_pred + R_eff
-
-#             # Kalman gain K = P_pred * H^T / S  (H = [1,0])
-#             K_x = P_x_pred / S
-#             K_v = P_xv_pred / S
-
-#             # State update
-#             x = x_pred + K_x * y
-#             v = v_pred + K_v * y
-
-#             # Covariance update P = (I - K H) P_pred
-#             P_x = (1 - K_x) * P_x_pred
-#             P_xv = (1 - K_x) * P_xv_pred
-#             P_v = P_v_pred - K_v * P_xv_pred
-
-#             # Ensure covariance symmetry and non-negativity (numerical correction)
-#             if P_x < 1e-9:
-#                 P_x = 1e-9
-#             if P_v < 1e-9:
-#                 P_v = 1e-9
-
-#         # ---- 4) Predict distance at tau seconds ahead, with velocity clipping and non-negative constraint ----
-#         # First clip velocity (avoid being pulled out of physical range by outliers)
-#         if abs(v) > V_MAX:
-#             v = math.copysign(V_MAX, v)
-
-#         dist_pred = x + v * tau
-
-#         # Reasonableness constraint
-#         if dist_pred < 0.0:
-#             dist_pred = 0.0
-#         if dist_pred > MAX_REASONABLE_DISTANCE:
-#             # If predicted distance exceeds reasonable upper limit, fallback to last observed value (more conservative)
-#             dist_pred = valid_vals[-1]
-
-#         hits[direction] = dist_pred
-
-#     return [(direction, dist) for direction, dist in hits.items()]
 
 def collision_avoiding_v1(current_file: str = CURRENT_POSITION_FILE) -> bool:
     """Stop when radar detects a close obstacle inside the safe zone."""
@@ -1215,72 +999,6 @@ def set_velocity(velocity: float) -> bool:
         return False
     return _atomic_write(SPEED_FILE, f"{speed_value:.6f}\n")
 
-
-def mode_random(status_file: str = WAYPOINT_STATUS_FILE, waypoint_file: str = DYNAMIC_WAYPOINTS_FILE) -> int:
-    """Random mode: if status == 'reached', generate and write a new waypoint.
-
-    Returns 0 on success (or nothing to do), non-zero on error.
-    """
-    status = _read_status(status_file)
-    if status != "reached":
-        return 0
-
-    # generate new coordinate
-    seed = int(time.time()) ^ (os.getpid() << 16)
-    random.seed(seed)
-    x = float(random.uniform(X_MIN, X_MAX))
-    y = float(random.uniform(Y_MIN, Y_MAX))
-
-    ok = goto(x, y)
-    return 0 if ok else 1
-
-
-def mode_nearest(status_file: str = WAYPOINT_STATUS_FILE,
-                 waypoint_file: str = DYNAMIC_WAYPOINTS_FILE,
-                 balls_file: str = BALL_POS_FILE,
-                 current_file: str = CURRENT_POSITION_FILE) -> int:
-    """Nearest mode: if status == 'reached', pick nearest ball to robot and write it as waypoint."""
-
-    if collision_avoiding_v3(current_file):
-        return 0
-
-    sim_time = _read_time_seconds(TIME_FILE)
-    if sim_time is not None and sim_time > 170.0:
-        goto(-0.9, 0.0, 180.0)
-        return 0
-
-    status = _read_status(status_file)
-    # if status != "reached":
-    #     return 0
-
-    cur = _read_current_position(current_file)
-    if cur is None:
-        return 0
-    bx = _read_ball_positions(balls_file)
-    if not bx:
-        return 0
-
-    cx, cy, _ = cur
-    best = None
-    best_d2 = None
-    for (x, y, typ) in bx:
-        try:
-            dx = x - cx; dy = y - cy
-            d2 = dx*dx + dy*dy
-        except Exception:
-            continue
-        if best_d2 is None or d2 < best_d2:
-            best_d2 = d2
-            best = (x, y)
-
-    if best is None:
-        return 0
-
-    target_x, target_y = best
-    heading_deg = math.degrees(math.atan2(target_y - cy, target_x - cx))
-    ok = goto(target_x, target_y, heading_deg)
-    return 0 if ok else 1
-
 SEARCHING_SEQUENCE = [
     (0, 0, 0),
     (0, 0, 90),
@@ -1320,11 +1038,11 @@ SEARCHING_SEQUENCE = [
     (-0.5, 0, -90),
 ]
 
-def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
+def mode_realistic_nearest(status_file: str = WAYPOINT_STATUS_FILE,
                           waypoint_file: str = DYNAMIC_WAYPOINTS_FILE,
                           visible_balls_file: str = VISIBLE_BALLS_FILE,
                           current_file: str = CURRENT_POSITION_FILE) -> int:
-    """Improved nearest mode: choose nearest ball from visible_balls.txt only."""
+    """Realistic nearest mode: choose nearest ball from visible_balls.txt only."""
 
     if collision_avoiding_v3(current_file, smart_factor=3.0):
         return 0
@@ -1397,6 +1115,159 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
     ok = goto(target_x, target_y, heading_deg)
     return 0 if ok else 1
 
+# Build 0.1m point grid over [-1, 1] x [-1, 1], starting from (0.95, 0.95).
+# Shape: 20 x 20, each entry is (x, y).
+FIELD_TILES = [
+    [
+        (round(0.95 - col * 0.1, 2), round(0.95 - row * 0.1, 2))
+        for col in range(20)
+    ]
+    for row in range(20)
+]
+
+print(f"FIELD_TILES = {FIELD_TILES}", file=sys.stderr)
+
+def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
+                          waypoint_file: str = DYNAMIC_WAYPOINTS_FILE,
+                          visible_balls_file: str = VISIBLE_BALLS_FILE,
+                          current_file: str = CURRENT_POSITION_FILE) -> int:
+    """Realistic nearest mode: choose nearest ball from visible_balls.txt only."""
+
+    
+
+    if collision_avoiding_v3(current_file, smart_factor=3.0):
+        return 0
+
+    sim_time = _read_time_seconds(TIME_FILE)
+    if sim_time is not None and sim_time > 170.0:
+        goto(-0.9, 0.0, 180.0)
+        return 0
+
+    cur = _read_current_position(current_file)
+
+    status = _read_status(status_file)
+
+    if cur is None:
+        return 0
+    bx = _read_visible_ball_positions(visible_balls_file)
+    cx, cy, bearing = cur
+    if not bx:
+        if status != "reached":
+            return 0
+        state = _read_state_pair(TEMP_STATE_FILE)
+        if state is None:
+            state = (0.0, 0.0)
+        miss_time = int(state[0])
+        search_record = int(state[1])
+        # print(f"[waypoints_cruise] no visible balls, miss_time={miss_time}, search_record={search_record}", file=sys.stderr)
+        if miss_time == 0.0:
+          if abs(cx) > 0.8 or abs(cy) > 0.8:
+              cx = max(-0.8, min(0.8, cx))
+              cy = max(-0.8, min(0.8, cy))
+              goto(cx, cy, bearing)
+          else:
+              heading = None if bearing is None else bearing + 179.0
+              goto(cx, cy, heading)
+          _atomic_write(TEMP_STATE_FILE, f"({miss_time+1}, {search_record})\n")
+          return 0
+        if miss_time == 1.0:
+          heading = None if bearing is None else bearing + 179.0
+          goto(cx, cy, heading)
+          _atomic_write(TEMP_STATE_FILE, f"({miss_time+1}, {search_record})\n")
+        if miss_time >= 2.0:
+            index = search_record % len(SEARCHING_SEQUENCE)
+            goto(SEARCHING_SEQUENCE[index][0], SEARCHING_SEQUENCE[index][1], SEARCHING_SEQUENCE[index][2])
+            _atomic_write(TEMP_STATE_FILE, f"({miss_time}, {(search_record+1)%len(SEARCHING_SEQUENCE)})\n")
+    else:
+        state = _read_state_pair(TEMP_STATE_FILE)
+        if state is not None:
+          search_record = int(state[1])
+        _atomic_write(TEMP_STATE_FILE, f"(0, {search_record})\n")
+    best = None
+    best_d2 = None
+    for (x, y, typ) in bx:
+        try:
+            dx = x - cx
+            dy = y - cy
+            d2 = dx * dx + dy * dy
+        except Exception:
+            continue
+        if best_d2 is None or d2 < best_d2:
+            best_d2 = d2
+            best = (x, y)
+
+    if best is None:
+        return 0
+
+    target_x, target_y = best
+    heading_deg = math.degrees(math.atan2(target_y - cy, target_x - cx))
+    ok = goto(target_x, target_y, heading_deg)
+    return 0 if ok else 1
+
+
+def mode_random(status_file: str = WAYPOINT_STATUS_FILE, waypoint_file: str = DYNAMIC_WAYPOINTS_FILE) -> int:
+    """Random mode: if status == 'reached', generate and write a new waypoint.
+
+    Returns 0 on success (or nothing to do), non-zero on error.
+    """
+    status = _read_status(status_file)
+    if status != "reached":
+        return 0
+
+    # generate new coordinate
+    seed = int(time.time()) ^ (os.getpid() << 16)
+    random.seed(seed)
+    x = float(random.uniform(X_MIN, X_MAX))
+    y = float(random.uniform(Y_MIN, Y_MAX))
+
+    ok = goto(x, y)
+    return 0 if ok else 1
+
+def mode_nearest(status_file: str = WAYPOINT_STATUS_FILE,
+                 waypoint_file: str = DYNAMIC_WAYPOINTS_FILE,
+                 balls_file: str = BALL_POS_FILE,
+                 current_file: str = CURRENT_POSITION_FILE) -> int:
+    """Nearest mode: if status == 'reached', pick nearest ball to robot and write it as waypoint."""
+
+    if collision_avoiding_v3(current_file):
+        return 0
+
+    sim_time = _read_time_seconds(TIME_FILE)
+    if sim_time is not None and sim_time > 170.0:
+        goto(-0.9, 0.0, 180.0)
+        return 0
+
+    status = _read_status(status_file)
+    # if status != "reached":
+    #     return 0
+
+    cur = _read_current_position(current_file)
+    if cur is None:
+        return 0
+    bx = _read_ball_positions(balls_file)
+    if not bx:
+        return 0
+
+    cx, cy, _ = cur
+    best = None
+    best_d2 = None
+    for (x, y, typ) in bx:
+        try:
+            dx = x - cx; dy = y - cy
+            d2 = dx*dx + dy*dy
+        except Exception:
+            continue
+        if best_d2 is None or d2 < best_d2:
+            best_d2 = d2
+            best = (x, y)
+
+    if best is None:
+        return 0
+
+    target_x, target_y = best
+    heading_deg = math.degrees(math.atan2(target_y - cy, target_x - cx))
+    ok = goto(target_x, target_y, heading_deg)
+    return 0 if ok else 1
 
 def mode_planned(status_file: str = WAYPOINT_STATUS_FILE,
                  planned_file: str = PLANNED_WAYPOINTS_FILE,
@@ -1441,282 +1312,13 @@ def mode_planned(status_file: str = WAYPOINT_STATUS_FILE,
     return 0
 
 
-def mode_developing(status_file: str = WAYPOINT_STATUS_FILE,
-                    waypoint_file: str = DYNAMIC_WAYPOINTS_FILE,
-                    current_file: str = CURRENT_POSITION_FILE) -> int:
-    
-    """Developing mode: for testing and development purposes.
-    
-    This function is for developers to test new features. Available utility functions are documented below.
-    
-    Returns 0 on success, non-zero on error.
-    """
-    status = _read_status(status_file)
-
-    # If status is not "reached", do nothing and return 0
-    # This ensures development mode logic only executes after the robot reaches the current target,
-    # avoiding interference with normal cruise behavior.
-    # Only in emergency situations (e.g., collision detection requiring immediate avoidance)
-    # should you call goto() to set a new target without waiting for "reached" status.
-    if status != "reached":
-        return 0
-    
-    # ==================== Development Guide ====================
-    
-    # 1. Get current robot position (returns (x, y, bearing_deg) or None)
-    #    bearing_deg is the heading angle in degrees
-    cur_pos = _read_current_position(CURRENT_POSITION_FILE)
-    if cur_pos:
-        x, y, bearing = cur_pos
-        # print(f"Current position: x={x:.3f}, y={y:.3f}, bearing={bearing}°")
-    
-    # 2. Get all ball positions and types (returns [(x, y, type), ...] list)
-    #    type is 'PING' or 'METAL'
-    balls = _read_ball_positions(BALL_POS_FILE)
-    # for ball_x, ball_y, ball_type in balls:
-    #     print(f"Ball: x={ball_x:.3f}, y={ball_y:.3f}, type={ball_type}")
-    
-    # 3. Get all obstacle robot positions (returns [(x, y), ...] list)
-    obstacles = _read_obstacle_positions(OBSTACLE_ROBOT_FILE)
-    # for obs_x, obs_y in obstacles:
-    #     print(f"Obstacle robot: x={obs_x:.3f}, y={obs_y:.3f}")
-
-    # 4. Get current simulation time (seconds)
-    sim_time = _read_time_seconds(TIME_FILE)
-    # if sim_time is not None:
-    #     print(f"Current simulation time: {sim_time:.3f} s")
-    
-    # 5. Use goto() function to set target waypoint
-    #    goto(x, y) - set position only
-    #    goto(x, y, orientation) - set position and heading (orientation in degrees)
-    #    Returns True on success, False on failure
-    
-    # Example: Go to the first ball's position
-    # if balls:
-    #     target_x, target_y, _ = balls[0]
-    #     ok = goto(target_x, target_y)
-    #     if ok:
-    #         print(f"Target set successfully: ({target_x:.3f}, {target_y:.3f})")
-    
-    # Example: Go to specified position with 90-degree heading
-    # ok = goto(0.5, 0.3, 90.0)
-    
-    # Example: Go to origin
-    # ok = goto(0.0, 0.0)
-    
-    # ==================== Add Your Logic Here ====================
-    
-    # TODO: 添加你的开发代码
-    """
-    Nearest-quadrant sweep WITH cardinal pre-orientation.
-    Steps:
-      1) If not oriented to nearest 0/90/180/270, issue goto(current_x,current_y,cardinal) and wait.
-      2) Once oriented, send entry corner (position-only) and wait.
-      3) Once at corner, perform zig-zag sweep with position-only waypoints.
-    Uses per-quadrant files: entry_done_q{q}.txt and oriented_q{q}.txt and sweep_index_q{q}.txt.
-    """
-    import os, math, sys
-
-    # run only after follower reports last waypoint reached
-    status = _read_status(status_file)
-    if status != "reached":
-        return 0
-
-    # constants: 2m x 2m arena centered at 0,0
-    ARENA = 2.0
-    HALF = ARENA / 2.0
-    X_MIN, X_MAX = -HALF, HALF
-    Y_MIN, Y_MAX = -HALF, HALF
-
-    ROBOT_SIZE = 0.20
-    ROBOT_RADIUS = ROBOT_SIZE / 2.0
-    SAFETY = 0.05
-
-    GRID_NX = 4
-    GRID_NY = 4
-
-    # read robot pose
-    cur = _read_current_position(current_file)
-    if cur is None:
-        print("[mode_developing] no current position", file=sys.stderr)
-        return 0
-    rx, ry, bearing_deg = cur
-    if bearing_deg is None:
-        bearing_deg = 0.0
-
-    # pick nearest quadrant by center distance (1: top-right, 2: top-left, 3: bottom-left, 4: bottom-right)
-    half_q = ARENA / 4.0  # 0.5
-    centers = {1: ( half_q*3,  half_q*3), 2: (-half_q,  half_q*3),
-               3: (-half_q, -half_q),        4: ( half_q*3, -half_q)}
-    def _dist(a,b,c,d): return math.hypot(a-c, b-d)
-    q = min(centers.keys(), key=lambda k: _dist(rx, ry, centers[k][0], centers[k][1]))
-
-    # quadrant raw bounds
-    x_mid = (X_MIN + X_MAX) / 2.0
-    y_mid = (Y_MIN + Y_MAX) / 2.0
-    if q == 1:
-        raw_x0, raw_x1 = x_mid, X_MAX; raw_y0, raw_y1 = y_mid, Y_MAX
-    elif q == 2:
-        raw_x0, raw_x1 = X_MIN, x_mid; raw_y0, raw_y1 = y_mid, Y_MAX
-    elif q == 3:
-        raw_x0, raw_x1 = X_MIN, x_mid; raw_y0, raw_y1 = Y_MIN, y_mid
-    else:
-        raw_x0, raw_x1 = x_mid, X_MAX; raw_y0, raw_y1 = Y_MIN, y_mid
-
-    # margin inward so waypoints not at walls
-    margin_x = ROBOT_RADIUS + SAFETY
-    margin_y = ROBOT_RADIUS + SAFETY
-    x0 = raw_x0 + (margin_x if raw_x0 < raw_x1 else -margin_x)
-    x1 = raw_x1 - (margin_x if raw_x1 > raw_x0 else -margin_x)
-    y0 = raw_y0 + (margin_y if raw_y0 < raw_y1 else -margin_y)
-    y1 = raw_y1 - (margin_y if raw_y1 > raw_y0 else -margin_y)
-
-    # fallback when margins invert
-    if x0 > x1:
-        xm = (raw_x0 + raw_x1) / 2.0; x0 = x1 = xm
-    if y0 > y1:
-        ym = (raw_y0 + raw_y1) / 2.0; y0 = y1 = ym
-
-    # entry corner (inside margin)
-    if q == 1:
-        entry_x, entry_y = x1, y1
-    elif q == 2:
-        entry_x, entry_y = x0, y1
-    elif q == 3:
-        entry_x, entry_y = x0, y0
-    else:
-        entry_x, entry_y = x1, y0
-
-    # compute 'into-quadrant' angle and snap to nearest cardinal
-    cx = (x0 + x1) / 2.0; cy = (y0 + y1) / 2.0
-    into_deg = (math.degrees(math.atan2(cy - entry_y, cx - entry_x)) + 360.0) % 360.0
-    cardinal = (round(into_deg / 90.0) * 90.0) % 360.0  # 0,90,180,270
-
-    # helper funcs & files
-    progress_file = os.path.join(BASE_DIR, f"sweep_index_q{q}.txt")
-    entry_flag_file = os.path.join(BASE_DIR, f"entry_done_q{q}.txt")
-    oriented_flag_file = os.path.join(BASE_DIR, f"oriented_q{q}.txt")
-
-    def _read_index(path: str) -> int:
-        try:
-            with open(path, "r") as f:
-                return int(f.read().strip())
-        except Exception:
-            return 0
-    def _write_index(path: str, idx: int) -> bool:
-        try:
-            tmp = path + ".tmp"
-            with open(tmp, "w") as f:
-                f.write(str(idx))
-            os.replace(tmp, path)
-            return True
-        except Exception as e:
-            print(f"[mode_developing] write index error: {e}", file=sys.stderr)
-            return False
-    def _read_flag(path: str) -> bool:
-        try:
-            with open(path, "r") as f:
-                return f.read().strip() == "1"
-        except Exception:
-            return False
-    def _write_flag(path: str, val: bool) -> bool:
-        try:
-            tmp = path + ".tmp"
-            with open(tmp, "w") as f:
-                f.write("1\n" if val else "0\n")
-            os.replace(tmp, path)
-            return True
-        except Exception as e:
-            print(f"[mode_developing] write flag error: {e}", file=sys.stderr)
-            return False
-
-    entry_done = _read_flag(entry_flag_file)
-    oriented_done = _read_flag(oriented_flag_file)
-
-    # build zig-zag grid (rows are horizontal sweeps)
-    grid = []
-    for iy in range(GRID_NY):
-        row = []
-        for ix in range(GRID_NX):
-            fx = ix / (GRID_NX - 1) if GRID_NX > 1 else 0.5
-            fy = iy / (GRID_NY - 1) if GRID_NY > 1 else 0.5
-            gx = x0 + fx * (x1 - x0)
-            gy = y0 + fy * (y1 - y0)
-            row.append((gx, gy))
-        if iy % 2 == 1:
-            row.reverse()
-        grid.extend(row)
-    if not grid:
-        print("[mode_developing] empty grid", file=sys.stderr)
-        return 1
-
-    # helpers: distance and angle difference
-    def _dist(ax, ay, bx, by): return math.hypot(ax-bx, ay-by)
-    def _ang_diff(a, b):
-        d = abs(((a - b + 180.0) % 360.0) - 180.0)
-        return d
-
-    ENTRY_TOL = max(0.12, ROBOT_RADIUS + 0.02)  # meters
-    ORIENT_TOL = 7.5  # degrees
-
-    # Step A: ensure robot is oriented to cardinal (rotate-in-place)
-    if not oriented_done:
-        cur_ang = (bearing_deg % 360.0)
-        if _ang_diff(cur_ang, cardinal) <= ORIENT_TOL:
-            # already oriented -> mark oriented
-            _write_flag(oriented_flag_file, True)
-            oriented_done = True
-        else:
-            # issue rotation-in-place (goto at current pos with cardinal orientation)
-            print(f"[mode_developing] rotating in place to {cardinal}° (cur {cur_ang:.1f}°)")
-            ok = goto(rx, ry, cardinal)
-            if not ok:
-                print("[mode_developing] failed to write rotation waypoint", file=sys.stderr)
-                return 1
-            return 0  # wait for follower to finish rotation (status -> reached)
-
-    # Step B: ensure robot goes to the quadrant entry corner (position-only)
-    d_entry = _dist(rx, ry, entry_x, entry_y)
-    if not entry_done:
-        if d_entry <= ENTRY_TOL:
-            # already at entry -> mark entry done
-            _write_flag(entry_flag_file, True)
-            entry_done = True
-        else:
-            # send only position (no orientation) so follower drives straight
-            print(f"[mode_developing] sending entry waypoint ({entry_x:.3f},{entry_y:.3f}) (pos-only)")
-            ok = goto(entry_x, entry_y)
-            if not ok:
-                print("[mode_developing] failed to write entry waypoint", file=sys.stderr)
-                return 1
-            return 0  # wait until follower reaches corner
-
-    # Step C: entry done -> perform zig-zag sweep (position-only waypoints)
-    idx = _read_index(progress_file)
-    idx = idx % len(grid)
-    tx, ty = grid[idx]
-    print(f"[mode_developing] issuing sweep waypoint #{idx} -> ({tx:.3f},{ty:.3f})")
-    ok = goto(tx, ty)  # position-only
-    if not ok:
-        print("[mode_developing] failed to write sweep waypoint", file=sys.stderr)
-        return 1
-
-    # advance index
-    next_idx = (idx + 1) % len(grid)
-    if not _write_index(progress_file, next_idx):
-        print("[mode_developing] warning: could not save index", file=sys.stderr)
-
-    return 0
-
-
 
 # Mode dispatch table: add new handlers here
 _MODE_HANDLERS = {
     "random": mode_random,
     "nearest": mode_nearest,
-    "improved_nearest": mode_improved_nearest,
+    "realistic_nearest": mode_realistic_nearest,
     "planned": mode_planned,
-    "developing": mode_developing,
 }
 
 
