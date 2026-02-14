@@ -1031,7 +1031,7 @@ def mode_developing(status_file: str = WAYPOINT_STATUS_FILE,
     # Only in emergency situations (e.g., collision detection requiring immediate avoidance)
     # should you call goto() to set a new target without waiting for "reached" status.
     
-    if collision_avoiding_v3(current_file, smart_factor=2.0): return 0
+    #if collision_avoiding_v3(current_file, smart_factor=2.0): return 0
     
     if status != "reached":
         return 0
@@ -1082,206 +1082,135 @@ def mode_developing(status_file: str = WAYPOINT_STATUS_FILE,
     # ==================== Add Your Logic Here ====================
     
     # TODO: 添加你的开发代码
-    """
-    Nearest-quadrant sweep WITH cardinal pre-orientation.
-    Steps:
-      1) If not oriented to nearest 0/90/180/270, issue goto(current_x,current_y,cardinal) and wait.
-      2) Once oriented, send entry corner (position-only) and wait.
-      3) Once at corner, perform zig-zag sweep with position-only waypoints.
-    Uses per-quadrant files: entry_done_q{q}.txt and oriented_q{q}.txt and sweep_index_q{q}.txt.
-    """
-    import os, math, sys
 
-    # run only after follower reports last waypoint reached
-    status = _read_status(status_file)
-    if status != "reached":
-        return 0
+    import os
+    import math
+    import sys
 
-    # constants: 2m x 2m arena centered at 0,0
-    ARENA = 2.0
-    HALF = ARENA / 2.0
-    X_MIN, X_MAX = -HALF, HALF
-    Y_MIN, Y_MAX = -HALF, HALF
+    # ---------- Helper Functions ----------
+    def read_text(path):
+        try:
+            with open(path, "r") as f:
+                return f.read().strip()
+        except Exception:
+            return None
 
-    ROBOT_SIZE = 0.20
-    ROBOT_RADIUS = ROBOT_SIZE / 2.0
-    SAFETY = 0.05
+    def write_text(path, txt):
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                f.write(str(txt))
+            os.replace(tmp, path)
+            return True
+        except Exception as e:
+            print("write_text failed:", e)
+            return False
 
-    GRID_NX = 4
-    GRID_NY = 4
-
-    # read robot pose
-    cur = _read_current_position(current_file)
-    if cur is None:
-        print("[mode_developing] no current position", file=sys.stderr)
-        return 0
-    rx, ry, bearing_deg = cur
-    if bearing_deg is None:
-        bearing_deg = 0.0
-
-    # pick nearest quadrant by center distance (1: top-right, 2: top-left, 3: bottom-left, 4: bottom-right)
-    half_q = ARENA / 4.0  # 0.5
-    centers = {1: ( half_q*3,  half_q*3), 2: (-half_q,  half_q*3),
-               3: (-half_q, -half_q),        4: ( half_q*3, -half_q)}
-    def _dist(a,b,c,d): return math.hypot(a-c, b-d)
-    q = min(centers.keys(), key=lambda k: _dist(rx, ry, centers[k][0], centers[k][1]))
-
-    # quadrant raw bounds
-    x_mid = (X_MIN + X_MAX) / 2.0
-    y_mid = (Y_MIN + Y_MAX) / 2.0
-    if q == 1:
-        raw_x0, raw_x1 = x_mid, X_MAX; raw_y0, raw_y1 = y_mid, Y_MAX
-    elif q == 2:
-        raw_x0, raw_x1 = X_MIN, x_mid; raw_y0, raw_y1 = y_mid, Y_MAX
-    elif q == 3:
-        raw_x0, raw_x1 = X_MIN, x_mid; raw_y0, raw_y1 = Y_MIN, y_mid
-    else:
-        raw_x0, raw_x1 = x_mid, X_MAX; raw_y0, raw_y1 = Y_MIN, y_mid
-
-    # margin inward so waypoints not at walls
-    margin_x = ROBOT_RADIUS + SAFETY
-    margin_y = ROBOT_RADIUS + SAFETY
-    x0 = raw_x0 + (margin_x if raw_x0 < raw_x1 else -margin_x)
-    x1 = raw_x1 - (margin_x if raw_x1 > raw_x0 else -margin_x)
-    y0 = raw_y0 + (margin_y if raw_y0 < raw_y1 else -margin_y)
-    y1 = raw_y1 - (margin_y if raw_y1 > raw_y0 else -margin_y)
-
-    # fallback when margins invert
-    if x0 > x1:
-        xm = (raw_x0 + raw_x1) / 2.0; x0 = x1 = xm
-    if y0 > y1:
-        ym = (raw_y0 + raw_y1) / 2.0; y0 = y1 = ym
-
-    # entry corner (inside margin)
-    if q == 1:
-        entry_x, entry_y = x1, y1
-    elif q == 2:
-        entry_x, entry_y = x0, y1
-    elif q == 3:
-        entry_x, entry_y = x0, y0
-    else:
-        entry_x, entry_y = x1, y0
-
-    # compute 'into-quadrant' angle and snap to nearest cardinal
-    cx = (x0 + x1) / 2.0; cy = (y0 + y1) / 2.0
-    into_deg = (math.degrees(math.atan2(cy - entry_y, cx - entry_x)) + 360.0) % 360.0
-    cardinal = (round(into_deg / 90.0) * 90.0) % 360.0  # 0,90,180,270
-
-    # helper funcs & files
-    progress_file = os.path.join(BASE_DIR, f"sweep_index_q{q}.txt")
-    entry_flag_file = os.path.join(BASE_DIR, f"entry_done_q{q}.txt")
-    oriented_flag_file = os.path.join(BASE_DIR, f"oriented_q{q}.txt")
-
-    def _read_index(path: str) -> int:
+    def read_int(path):
         try:
             with open(path, "r") as f:
                 return int(f.read().strip())
         except Exception:
             return 0
-    def _write_index(path: str, idx: int) -> bool:
+
+    def write_int(path, value):
         try:
             tmp = path + ".tmp"
             with open(tmp, "w") as f:
-                f.write(str(idx))
+                f.write(str(value))
             os.replace(tmp, path)
             return True
         except Exception as e:
-            print(f"[mode_developing] write index error: {e}", file=sys.stderr)
-            return False
-    def _read_flag(path: str) -> bool:
-        try:
-            with open(path, "r") as f:
-                return f.read().strip() == "1"
-        except Exception:
-            return False
-    def _write_flag(path: str, val: bool) -> bool:
-        try:
-            tmp = path + ".tmp"
-            with open(tmp, "w") as f:
-                f.write("1\n" if val else "0\n")
-            os.replace(tmp, path)
-            return True
-        except Exception as e:
-            print(f"[mode_developing] write flag error: {e}", file=sys.stderr)
+            print("write_int failed:", e)
             return False
 
-    entry_done = _read_flag(entry_flag_file)
-    oriented_done = _read_flag(oriented_flag_file)
+    # ---------- Hardcoded Snake Waypoints ----------
 
-    # build zig-zag grid (rows are horizontal sweeps)
-    grid = []
-    for iy in range(GRID_NY):
-        row = []
-        for ix in range(GRID_NX):
-            fx = ix / (GRID_NX - 1) if GRID_NX > 1 else 0.5
-            fy = iy / (GRID_NY - 1) if GRID_NY > 1 else 0.5
-            gx = x0 + fx * (x1 - x0)
-            gy = y0 + fy * (y1 - y0)
-            row.append((gx, gy))
-        if iy % 2 == 1:
-            row.reverse()
-        grid.extend(row)
-    if not grid:
-        print("[mode_developing] empty grid", file=sys.stderr)
-        return 1
+    waypoints_q3 = [
+        (-0.8,  0.0), (-0.8, -0.2), (-0.8, -0.4), (-0.8, -0.6), (-0.8, -0.8),
+        (-0.6, -0.8), (-0.6, -0.6), (-0.6, -0.4), (-0.6, -0.2), (-0.6,  0.0),
+        (-0.4,  0.0), (-0.4, -0.2), (-0.4, -0.4), (-0.4, -0.6), (-0.4, -0.8),
+        (-0.2, -0.8), (-0.2, -0.6), (-0.2, -0.4), (-0.2, -0.2), (-0.2,  0.0),
+        ( 0.0,  0.0), ( 0.0, -0.2), ( 0.0, -0.4), ( 0.0, -0.6), ( 0.0, -0.8),
+    ]
 
-    # helpers: distance and angle difference
-    def _dist(ax, ay, bx, by): return math.hypot(ax-bx, ay-by)
-    def _ang_diff(a, b):
-        d = abs(((a - b + 180.0) % 360.0) - 180.0)
-        return d
+    waypoints_q1 = [
+        (0.0,  0.8), (0.0,  0.6), (0.0,  0.4), (0.0,  0.2), (0.0,  0.0),
+        (0.2,  0.0), (0.2,  0.2), (0.2,  0.4), (0.2,  0.6), (0.2,  0.8),
+        (0.4,  0.8), (0.4,  0.6), (0.4,  0.4), (0.4,  0.2), (0.4,  0.0),
+        (0.6,  0.0), (0.6,  0.2), (0.6,  0.4), (0.6,  0.6), (0.6,  0.8),
+        (0.8,  0.8), (0.8,  0.6), (0.8,  0.4), (0.8,  0.2), (0.8,  0.0),
+    ]
 
-    ENTRY_TOL = max(0.12, ROBOT_RADIUS + 0.02)  # meters
-    ORIENT_TOL = 7.5  # degrees
+    waypoints_q2 = [
+        (-0.8,  0.8), (-0.8,  0.6), (-0.8,  0.4), (-0.8,  0.2), (-0.8,  0.0),
+        (-0.6,  0.0), (-0.6,  0.2), (-0.6,  0.4), (-0.6,  0.6), (-0.6,  0.8),
+        (-0.4,  0.8), (-0.4,  0.6), (-0.4,  0.4), (-0.4,  0.2), (-0.4,  0.0),
+        (-0.2,  0.0), (-0.2,  0.2), (-0.2,  0.4), (-0.2,  0.6), (-0.2,  0.8),
+        ( 0.0,  0.8), ( 0.0,  0.6), ( 0.0,  0.4), ( 0.0,  0.2), ( 0.0,  0.0),
+    ]
 
-    # Step A: ensure robot is oriented to cardinal (rotate-in-place)
-    if not oriented_done:
-        cur_ang = (bearing_deg % 360.0)
-        if _ang_diff(cur_ang, cardinal) <= ORIENT_TOL:
-            # already oriented -> mark oriented
-            _write_flag(oriented_flag_file, True)
-            oriented_done = True
-        else:
-            # issue rotation-in-place (goto at current pos with cardinal orientation)
-            print(f"[mode_developing] rotating in place to {cardinal}° (cur {cur_ang:.1f}°)")
-            ok = goto(rx, ry, cardinal)
-            if not ok:
-                print("[mode_developing] failed to write rotation waypoint", file=sys.stderr)
-                return 1
-            return 0  # wait for follower to finish rotation (status -> reached)
+    waypoints_q4 = [
+        (0.0,  0.0), (0.0, -0.2), (0.0, -0.4), (0.0, -0.6), (0.0, -0.8),
+        (0.2, -0.8), (0.2, -0.6), (0.2, -0.4), (0.2, -0.2), (0.2,  0.0),
+        (0.4,  0.0), (0.4, -0.2), (0.4, -0.4), (0.4, -0.6), (0.4, -0.8),
+        (0.6, -0.8), (0.6, -0.6), (0.6, -0.4), (0.6, -0.2), (0.6,  0.0),
+        (0.8,  0.0), (0.8, -0.2), (0.8, -0.4), (0.8, -0.6), (0.8, -0.8),
+    ]
 
-    # Step B: ensure robot goes to the quadrant entry corner (position-only)
-    d_entry = _dist(rx, ry, entry_x, entry_y)
-    if not entry_done:
-        if d_entry <= ENTRY_TOL:
-            # already at entry -> mark entry done
-            _write_flag(entry_flag_file, True)
-            entry_done = True
-        else:
-            # send only position (no orientation) so follower drives straight
-            print(f"[mode_developing] sending entry waypoint ({entry_x:.3f},{entry_y:.3f}) (pos-only)")
-            ok = goto(entry_x, entry_y)
-            if not ok:
-                print("[mode_developing] failed to write entry waypoint", file=sys.stderr)
-                return 1
-            return 0  # wait until follower reaches corner
+    waypoints_map = {1: waypoints_q1, 2: waypoints_q2, 3: waypoints_q3, 4: waypoints_q4}
 
-    # Step C: entry done -> perform zig-zag sweep (position-only waypoints)
-    idx = _read_index(progress_file)
-    idx = idx % len(grid)
-    tx, ty = grid[idx]
-    print(f"[mode_developing] issuing sweep waypoint #{idx} -> ({tx:.3f},{ty:.3f})")
-    ok = goto(tx, ty)  # position-only
+    # ---------- Determine Quadrant (only once) ----------
+
+    quadrant_file = os.path.join(BASE_DIR, "sweep_active_quadrant.txt")
+    idx_file_template = os.path.join(BASE_DIR, "sweep_index_q{}.txt")
+
+    q_txt = read_text(quadrant_file)
+
+    if q_txt is None:
+        # first time: determine quadrant
+        cur = _read_current_position(current_file)
+        if cur is None:
+            return 0
+        rx, ry, _ = cur
+
+        canonical = {"left": (-1.0, 0.0), "right": (1.0, 0.0), "top": (0.0, 1.0), "bottom": (0.0, -1.0)}
+        def dist(a,b,c,d): return math.hypot(a-c, b-d)
+        nearest_key = min(canonical.keys(), key=lambda k: dist(rx, ry, canonical[k][0], canonical[k][1]))
+        mapping = {"left": 3, "right": 1, "top": 2, "bottom": 4}
+        chosen_q = mapping[nearest_key]
+
+        write_text(quadrant_file, chosen_q)
+        write_int(idx_file_template.format(chosen_q), 0)
+
+    else:
+        chosen_q = int(q_txt)
+
+    waypoints = waypoints_map[chosen_q]
+    idx_file = idx_file_template.format(chosen_q)
+
+    # ---------- Only advance when status == reached ----------
+    status = _read_status(status_file)
+    if status != "reached":
+        return 0
+
+    idx = read_int(idx_file)
+
+    if idx >= len(waypoints):
+        return 0
+
+    tx, ty = waypoints[idx]
+
+    print(f"[mode_developing] quadrant={chosen_q} idx={idx} -> ({tx}, {ty})")
+
+    ok = goto(tx, ty)
     if not ok:
-        print("[mode_developing] failed to write sweep waypoint", file=sys.stderr)
         return 1
 
-    # advance index
-    next_idx = (idx + 1) % len(grid)
-    if not _write_index(progress_file, next_idx):
-        print("[mode_developing] warning: could not save index", file=sys.stderr)
+    write_int(idx_file, idx + 1)
 
     return 0
+
 
 
 

@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 5.260000
+=======
+7.896000
+>>>>>>> 3b00b5b (wly edited: first version of sweeping 1/4 of the arena)

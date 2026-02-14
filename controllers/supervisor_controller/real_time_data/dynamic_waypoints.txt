@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 (0.535186, 0.146348, 65.323434)
+=======
+(-0.600000, -0.400000, None)
+>>>>>>> 3b00b5b (wly edited: first version of sweeping 1/4 of the arena)
