@@ -27,7 +27,14 @@ import re
 from typing import Optional
 
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "controllers", "supervisor_controller", "real_time_data"))
+# =============================================================================
+# PATHS AND FILE LOCATIONS
+# Shared file paths used for supervisor <-> decision-making data exchange.
+# =============================================================================
+THIS_DIR = os.path.dirname(__file__)
+REAL_TIME_DIR = os.path.join(THIS_DIR, "real_time_data")
+BASE_DIR = os.path.abspath(os.path.join(THIS_DIR, "..", "controllers", "supervisor_controller", "real_time_data"))
+
 WAYPOINT_STATUS_FILE = os.path.join(BASE_DIR, "waypoint_status.txt")
 DYNAMIC_WAYPOINTS_FILE = os.path.join(BASE_DIR, "dynamic_waypoints.txt")
 BALL_POS_FILE = os.path.join(BASE_DIR, "ball_position.txt")
@@ -37,25 +44,29 @@ TIME_FILE = os.path.join(BASE_DIR, "time.txt")
 SPEED_FILE = os.path.join(BASE_DIR, "speed.txt")
 VISIBLE_BALLS_FILE = os.path.join(BASE_DIR, "visible_balls.txt")
 
-PLANNED_WAYPOINTS_FILE = os.path.join(os.path.dirname(__file__), "planned_waypoints.txt")
+PLANNED_WAYPOINTS_FILE = os.path.join(THIS_DIR, "planned_waypoints.txt")
 
-PLANNED_INDEX_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "planned_waypoints_index.txt")
-TEMP_STATE_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "search_state.txt")
-WAYPOINTS_STACK_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "waypoints_stack.txt")
-RADAR_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "radar_memory.txt")
-COLLISION_STATUS_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "collision_avoiding_status.txt")
-DYNAMIC_WAYPOINTS_TYPE_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "dynamic_waypoints_type.txt")
-ROBOT_AROUND_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "robot_around.txt")
-LAST_BEST_VECTOR_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "last_best_vector.txt")
-SEEN_TILE_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "see_tile.txt")
-TILE_SEEN_TIME_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "tile_seen_time.txt")
-BALL_MEMORY_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "ball_tile_memory.txt")
-LAST_SECOND_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "last_second.txt")
-BALL_LIST_MEMORY_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "ball_memory.txt")
-UNSEEN_TILE_MEMORY_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "unseen_tile_memory.txt")
-LAST_SECOND_TILES_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "last_second_tiles.txt")
-UNSEEN_REGIONS_FILE = os.path.join(os.path.dirname(__file__), "real_time_data", "unseen_regions.txt")
+PLANNED_INDEX_FILE = os.path.join(REAL_TIME_DIR, "planned_waypoints_index.txt")
+TEMP_STATE_FILE = os.path.join(REAL_TIME_DIR, "search_state.txt")
+WAYPOINTS_STACK_FILE = os.path.join(REAL_TIME_DIR, "waypoints_stack.txt")
+RADAR_HISTORY_FILE = os.path.join(REAL_TIME_DIR, "radar_memory.txt")
+COLLISION_STATUS_FILE = os.path.join(REAL_TIME_DIR, "collision_avoiding_status.txt")
+DYNAMIC_WAYPOINTS_TYPE_FILE = os.path.join(REAL_TIME_DIR, "dynamic_waypoints_type.txt")
+ROBOT_AROUND_FILE = os.path.join(REAL_TIME_DIR, "robot_around.txt")
+LAST_BEST_VECTOR_FILE = os.path.join(REAL_TIME_DIR, "last_best_vector.txt")
+SEEN_TILE_FILE = os.path.join(REAL_TIME_DIR, "see_tile.txt")
+TILE_SEEN_TIME_FILE = os.path.join(REAL_TIME_DIR, "tile_seen_time.txt")
+BALL_MEMORY_FILE = os.path.join(REAL_TIME_DIR, "ball_tile_memory.txt")
+LAST_SECOND_FILE = os.path.join(REAL_TIME_DIR, "last_second.txt")
+BALL_LIST_MEMORY_FILE = os.path.join(REAL_TIME_DIR, "ball_memory.txt")
+UNSEEN_TILE_MEMORY_FILE = os.path.join(REAL_TIME_DIR, "unseen_tile_memory.txt")
+LAST_SECOND_TILES_FILE = os.path.join(REAL_TIME_DIR, "last_second_tiles.txt")
+UNSEEN_REGIONS_FILE = os.path.join(REAL_TIME_DIR, "unseen_regions.txt")
 
+# =============================================================================
+# GLOBAL CONSTANTS
+# Runtime mode, geometric bounds, speed limits, and static grids/sequences.
+# =============================================================================
 # Set the default mode here for convenience. Edit this file and set
 # `DEFAULT_MODE` to the mode you want the script to use when no CLI arg
 # or `MODE` environment variable is provided. Example: 'random', 'nearest', 'realistic_nearest', 'planned' or 'developing'.
@@ -67,6 +78,61 @@ Y_MIN, Y_MAX = -0.86, 0.86
 RADAR_MAX_RANGE = 0.8
 MAX_SPEED = 0.7
 NORMAL_SPEED = 0.3
+
+SEARCHING_SEQUENCE = [
+    (0, 0, 0),
+    (0, 0, 90),
+    (0, 0, 180),
+    (0, 0, -90),
+    (0.5, 0.5, 0),
+    (0.5, 0.5, 90),
+    (0.5, 0.5, 180),
+    (0.5, 0.5, -90),
+    (-0.5, 0.5, 0),
+    (-0.5, 0.5, 90),
+    (-0.5, 0.5, 180),
+    (-0.5, 0.5, -90),
+    (-0.5, -0.5, 0),
+    (-0.5, -0.5, 90),
+    (-0.5, -0.5, 180),
+    (-0.5, -0.5, -90),
+    (0.5, -0.5, 0),
+    (0.5, -0.5, 90),
+    (0.5, -0.5, 180),
+    (0.5, -0.5, -90),
+    (0, 0.5, 0),
+    (0, 0.5, 90),
+    (0, 0.5, 180),
+    (0, 0.5, -90),
+    (0.5, 0, 0),
+    (0.5, 0, 90),
+    (0.5, 0, 180),
+    (0.5, 0, -90),
+    (0, -0.5, 0),
+    (0, -0.5, 90),
+    (0, -0.5, 180),
+    (0, -0.5, -90),
+    (-0.5, 0, 0),
+    (-0.5, 0, 90),
+    (-0.5, 0, 180),
+    (-0.5, 0, -90),
+]
+
+# Build 0.1m point grid over [-1, 1] x [-1, 1].
+# Top-left is (-0.95, 0.95), bottom-right is (0.95, -0.95).
+FIELD_TILES = [
+    [
+        (round(-0.95 + col * 0.1, 2), round(0.95 - row * 0.1, 2))
+        for col in range(20)
+    ]
+    for row in range(20)
+]
+
+
+# =============================================================================
+# CORE IO HELPERS
+# Safe file reads/writes and lightweight state parsing utilities.
+# =============================================================================
 
 
 def _read_status(path: str) -> Optional[str]:
@@ -308,6 +374,10 @@ def _read_stack_timestamp(path: str) -> Optional[float]:
     return None
 
 
+# =============================================================================
+# GEOMETRY AND VISIBILITY
+# Visibility checks in world/robot frames and line-of-sight occlusion.
+# =============================================================================
 def in_view(point,
             FOV: float = 60.0,
             Range: float = 0.8,
@@ -424,6 +494,10 @@ def in_view(point,
     return True
 
 
+# =============================================================================
+# RADAR SAMPLING
+# Build directional proximity observations from obstacle and wall samples.
+# =============================================================================
 def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> list[tuple[str, float]]:
     """Return obstacle directions and distances in robot frame.
 
@@ -606,6 +680,10 @@ def _predict_wall_radar_distances(current_file: str = CURRENT_POSITION_FILE) -> 
     return predicted
 
 
+# =============================================================================
+# COLLISION AVOIDANCE
+# Radar-triggered collision handling and avoidance waypoint generation.
+# =============================================================================
 def collision_avoiding_v1(current_file: str = CURRENT_POSITION_FILE) -> bool:
     """Stop when radar detects a close obstacle inside the safe zone."""
     cur = _read_current_position(current_file)
@@ -1031,6 +1109,10 @@ def _write_planned_index(path: str, index: int) -> bool:
     
 
 
+# =============================================================================
+# WAYPOINT AND SPEED COMMANDS
+# Action primitives for writing dynamic waypoint and speed outputs.
+# =============================================================================
 def goto(x: float, y: float, orientation=None, waypoint_type: str = "task") -> bool:
     """Set the dynamic waypoint to the specified coordinates.
     
@@ -1082,45 +1164,10 @@ def set_velocity(velocity: float) -> bool:
         return False
     return _atomic_write(SPEED_FILE, f"{speed_value:.6f}\n")
 
-SEARCHING_SEQUENCE = [
-    (0, 0, 0),
-    (0, 0, 90),
-    (0, 0, 180),
-    (0, 0, -90),
-    (0.5, 0.5, 0),
-    (0.5, 0.5, 90),
-    (0.5, 0.5, 180),
-    (0.5, 0.5, -90),
-    (-0.5, 0.5, 0),
-    (-0.5, 0.5, 90),
-    (-0.5, 0.5, 180),
-    (-0.5, 0.5, -90),
-    (-0.5, -0.5, 0),
-    (-0.5, -0.5, 90),
-    (-0.5, -0.5, 180),
-    (-0.5, -0.5, -90),
-    (0.5, -0.5, 0),
-    (0.5, -0.5, 90),
-    (0.5, -0.5, 180),
-    (0.5, -0.5, -90),
-    (0, 0.5, 0),
-    (0, 0.5, 90),
-    (0, 0.5, 180),
-    (0, 0.5, -90),
-    (0.5, 0, 0),
-    (0.5, 0, 90),
-    (0.5, 0, 180),
-    (0.5, 0, -90),
-    (0, -0.5, 0),
-    (0, -0.5, 90),
-    (0, -0.5, 180),
-    (0, -0.5, -90),
-    (-0.5, 0, 0),
-    (-0.5, 0, 90),
-    (-0.5, 0, 180),
-    (-0.5, 0, -90),
-]
-
+# =============================================================================
+# DECISION MODES
+# Mode handlers executed on each cruise-script tick.
+# =============================================================================
 def mode_realistic_nearest(status_file: str = WAYPOINT_STATUS_FILE,
                           waypoint_file: str = DYNAMIC_WAYPOINTS_FILE,
                           visible_balls_file: str = VISIBLE_BALLS_FILE,
@@ -1198,17 +1245,10 @@ def mode_realistic_nearest(status_file: str = WAYPOINT_STATUS_FILE,
     ok = goto(target_x, target_y, heading_deg)
     return 0 if ok else 1
 
-# Build 0.1m point grid over [-1, 1] x [-1, 1].
-# Top-left is (-0.95, 0.95), bottom-right is (0.95, -0.95).
-FIELD_TILES = [
-    [
-        (round(-0.95 + col * 0.1, 2), round(0.95 - row * 0.1, 2))
-        for col in range(20)
-    ]
-    for row in range(20)
-]
-
-
+# =============================================================================
+# TILE MEMORY AND EXPLORATION
+# Grid-memory bookkeeping for seen/unseen regions and exploration targets.
+# =============================================================================
 def _read_seen_tile_matrix(path: str, rows: int, cols: int) -> list[list[float]]:
     """Read seen tile matrix from text file; return zero matrix on failure/missing data."""
     matrix = [[0.0 for _ in range(cols)] for _ in range(rows)]
@@ -1741,6 +1781,10 @@ _MODE_HANDLERS = {
 }
 
 
+# =============================================================================
+# CLI ENTRYPOINT
+# Resolve mode from CLI/env/default and dispatch to the selected handler.
+# =============================================================================
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("mode", nargs="?", help="Mode to run (overrides MODE env)")

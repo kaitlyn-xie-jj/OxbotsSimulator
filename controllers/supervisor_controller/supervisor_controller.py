@@ -1,40 +1,143 @@
 # supervisor_controller.py
-# Non-blocking Supervisor controller (includes random ball placement + simplified absorption logic)
+# Non-blocking Supervisor controller:
+# - random ball placement
+# - simplified absorption logic
+# - dynamic waypoint handling
 from controller import Supervisor
 import math
 import numpy as np
 import os
 import random
-import sys
-import subprocess
+import re
 import signal
+import subprocess
+import sys
+import time
 
-# ==== Initialization ====
-RANDOM_SEED = 1236
-DEFAULT_VELOCITY = 0.3 # m/s
-DEFAULT_ANGULAR_VELOCITY_MAIN = 90  # deg/s (equiv to 2 rad/s)
-DEFAULT_ANGULAR_VELOCITY_OBSTACLE = 90  # deg/s (equiv to 2 rad/s)
+
+# =============================================================================
+# RUNTIME INITIALIZATION
+# Create Webots supervisor handle and simulation time step.
+# =============================================================================
 supervisor = Supervisor()
 TIME_STEP = int(supervisor.getBasicTimeStep())
 dt = TIME_STEP / 1000.0  # seconds
 
+
+# =============================================================================
+# GLOBAL CONSTANTS
+# Tunable parameters for motion, balls, absorption, and scheduling.
+# =============================================================================
+RANDOM_SEED = 1236
+DEFAULT_VELOCITY = 0.3  # m/s
+DEFAULT_ANGULAR_VELOCITY_MAIN = 90  # deg/s
+DEFAULT_ANGULAR_VELOCITY_OBSTACLE = 90  # deg/s
+
+MAIN_ROBOT_NAME = "MY_ROBOT"
+OBSTACLE_ROBOT_NAMES = ["OBSTACLE_ROBOT_1", "OBSTACLE_ROBOT_2", "OBSTACLE_ROBOT_3"]
+OBSTACLE_START_INDICES = [1, 50, 99]
+
+BALL_PREFIX = "BALL_"
+BALL_COUNT = 40
+X_MIN, X_MAX = -0.86, 0.86
+Y_MIN, Y_MAX = -0.86, 0.86
+BALL_RADIUS = 0.02
+MIN_SEPARATION = 2.0 * BALL_RADIUS + 0.001
+MAX_TRIES_PER_BALL = 2000
+SETTLE_STEPS_AFTER_PLACEMENT = max(1, int(0.2 / dt))
+Z_EPS = 0.001
+
+# Startup placement avoidance around the main robot
+ROBOT_X = -0.8
+ROBOT_Y = 0.0
+ROBOT_HALF_SIZE = 0.1
+CLEARANCE = 0.05
+
+# Robot-local absorption area
+ABSORB_BOX_HALF_X = 0.12
+ABSORB_BOX_HALF_Y = 0.05
+ABSORB_LOCATION = (-1.1, 0.0, 0.4)
+
+# Waypoint orientation aliases (radians)
+North = math.pi / 2
+East = 0.0
+South = -math.pi / 2
+West = math.pi
+
+# Cruise script execution config
+CRUISE_INTERVAL_FRAMES = 15
+
+# Field viewer config
+FIELD_VIEWER_PORT = 5001
+
+
+# =============================================================================
+# PATHS AND FILE LOCATIONS
+# Centralized paths used by supervisor, decision modules, and data exchange files.
+# =============================================================================
+THIS_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.abspath(os.path.join(THIS_DIR, "..", ".."))
+WHO_IS_DEV_FILE = os.path.join(PROJECT_ROOT, "who_is_developing.txt")
+REAL_TIME_DATA_DIR = os.path.join(THIS_DIR, "real_time_data")
+FIELD_VIEWER_PATH = os.path.abspath(
+    os.path.join(THIS_DIR, "..", "..", "tools", "field_viewer", "server.py")
+)
+
+
+def _resolve_decision_making_dir():
+    """Select decision_making folder based on who_is_developing.txt (cyc/wly)."""
+    default_dir = os.path.join(PROJECT_ROOT, "decision_making")
+    try:
+        with open(WHO_IS_DEV_FILE, "r") as f:
+            dev = f.read().strip().lower()
+        if dev == "cyc":
+            return os.path.join(PROJECT_ROOT, "decision_making_cyc")
+        if dev == "wly":
+            return os.path.join(PROJECT_ROOT, "decision_making_wly")
+    except Exception:
+        pass
+    return default_dir
+
+
+DECISION_MAKING_DIR = _resolve_decision_making_dir()
+DECISION_REAL_TIME_DIR = os.path.join(DECISION_MAKING_DIR, "real_time_data")
+
+DYNAMIC_WAYPOINTS_FILE = os.path.join(REAL_TIME_DATA_DIR, "dynamic_waypoints.txt")
+WAYPOINTS_HISTORY_FILE = os.path.join(REAL_TIME_DATA_DIR, "waypoints_history.txt")
+WAYPOINT_STATUS_FILE = os.path.join(REAL_TIME_DATA_DIR, "waypoint_status.txt")
+BALL_POS_FILE = os.path.join(REAL_TIME_DATA_DIR, "ball_position.txt")
+CURRENT_POSITION_FILE = os.path.join(REAL_TIME_DATA_DIR, "current_position.txt")
+OBSTACLE_ROBOT_FILE = os.path.join(REAL_TIME_DATA_DIR, "obstacle_robot.txt")
+TIME_FILE = os.path.join(REAL_TIME_DATA_DIR, "time.txt")
+OBSTACLE_PLAN_FILE = os.path.join(REAL_TIME_DATA_DIR, "obstacle_plan.txt")
+SPEED_FILE = os.path.join(REAL_TIME_DATA_DIR, "speed.txt")
+VISIBLE_BALLS_FILE = os.path.join(REAL_TIME_DATA_DIR, "visible_balls.txt")
+CRUISE_SCRIPT_PATH = os.path.join(DECISION_MAKING_DIR, "waypoints_cruise.py")
+
+
+# =============================================================================
+# RUNTIME STATE
+# Mutable counters and in-memory status caches.
+# =============================================================================
 SCORE = 0
 STEEL_STORED = 0
 PING_STORED = 0
 STEEL_HIT = 0
 PING_HIT = 0
 
-# Get robot references
-MAIN_ROBOT_NAME = "MY_ROBOT"
-OBSTACLE_ROBOT_NAMES = ["OBSTACLE_ROBOT_1", "OBSTACLE_ROBOT_2", "OBSTACLE_ROBOT_3"]
-OBSTACLE_START_INDICES = [1, 50, 99]  # Starting waypoint indices for each obstacle robot
+# Tracks whether each ball has been absorbed to prevent double counting
+ball_simple_state = {}  # name -> {"absorbed": bool}
 
+
+# =============================================================================
+# ROBOT REFERENCES
+# Resolve main robot and obstacle robot nodes from Webots world definitions.
+# =============================================================================
 main_robot = supervisor.getFromDef(MAIN_ROBOT_NAME)
 if main_robot is None:
     print(f"ERROR: DEF {MAIN_ROBOT_NAME} not found in world.")
     sys.exit(1)
 
-# Get all obstacle robots
 obstacle_robots = []
 for name in OBSTACLE_ROBOT_NAMES:
     robot = supervisor.getFromDef(name)
@@ -42,12 +145,6 @@ for name in OBSTACLE_ROBOT_NAMES:
         obstacle_robots.append(robot)
     else:
         print(f"Warning: DEF {name} not found in world.")
-
-# ==== Field viewer (init) ====
-FIELD_VIEWER_PORT = 5001
-FIELD_VIEWER_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "tools", "field_viewer", "server.py")
-)
 
 def _start_field_viewer():
     try:
@@ -75,7 +172,10 @@ def _start_field_viewer():
 
 _start_field_viewer()
 
-# ==== Utility functions ====
+# =============================================================================
+# SHARED HELPERS
+# Small math helpers reused by controller logic.
+# =============================================================================
 def _normalize_angle(a):
     """Normalize angle to [-pi, pi]"""
     return (a + math.pi) % (2 * math.pi) - math.pi
@@ -83,7 +183,10 @@ def _normalize_angle(a):
 def _deg_to_rad(deg):
     return deg * math.pi / 180.0
 
-# ==== Non-blocking MotionController ====
+# =============================================================================
+# MOTION CONTROLLER (NON-BLOCKING)
+# Per-robot motion state machine with optional cyclic waypoint traversal.
+# =============================================================================
 class MotionController:
     """Controls robot motion with support for waypoint cycling"""
     def __init__(self, trans_field, rot_field, dt, cycle_mode=False):
@@ -173,29 +276,8 @@ class MotionController:
 
         self.active = True
 
-    def update(self):
-        """Called each frame to advance motion; returns True if the task is completed or idle"""
-        if not self.active:
-            return True
-
-        cur_pos = np.array(self.trans.getSFVec3f(), dtype=float)
-        step_dist = self.velocity * self.dt
-
-        # helper: single-step rotate towards target_ang
-        def step_rotate_towards(target_ang):
-            cur = _normalize_angle(self.rot.getSFRotation()[3])
-            rem = _normalize_angle(target_ang - cur)
-            if abs(rem) <= 1e-3:
-                self.rot.setSFRotation([0, 0, 1, target_ang])
-                return True
-            max_step = self.angular_speed * self.dt
-            step_ang = max_step if abs(rem) > max_step else abs(rem)
-            sign = 1.0 if rem > 0 else -1.0
-            self.rot.setSFRotation([0, 0, 1, _normalize_angle(cur + sign * step_ang)])
-            return False
-
     def _complete_waypoint(self):
-        """Handle waypoint completion with cycle mode support"""
+        """Mark current waypoint complete and auto-advance in cycle mode."""
         self.active = False
         self.phase = None
         if self.cycle_mode:
@@ -302,22 +384,10 @@ class MotionController:
 
         return True
 
-# ==== Randomize balls (start) ====
-BALL_PREFIX = "BALL_"
-BALL_COUNT = 40
-X_MIN, X_MAX = -0.86, 0.86
-Y_MIN, Y_MAX = -0.86, 0.86
-BALL_RADIUS = 0.02
-MIN_SEPARATION = 2.0 * BALL_RADIUS + 0.001
-MAX_TRIES_PER_BALL = 2000
-SETTLE_STEPS_AFTER_PLACEMENT = max(1, int(0.2 / dt))
-Z_EPS = 0.001
-
-# Robot occupancy parameters (avoid when placing balls at start)
-ROBOT_X = -0.8
-ROBOT_Y = 0.0
-ROBOT_HALF_SIZE = 0.1
-CLEARANCE = 0.05
+# =============================================================================
+# BALL PLACEMENT
+# Randomized spawn with avoid-zones and overlap mitigation.
+# =============================================================================
 
 def _point_in_rect(px, py, rect):
     return (rect[0] <= px <= rect[1]) and (rect[2] <= py <= rect[3])
@@ -408,13 +478,10 @@ def randomize_balls(seed=None, ensure_no_overlap=True):
 
     print(f"Randomized {len(placed_positions)} balls. seed={seed}, no_overlap={ensure_no_overlap}")
 
-# ==== Simplified absorption monitoring (per-frame simple box check) ====
-ABSORB_BOX_HALF_X = 0.12   # robot-local x half-width
-ABSORB_BOX_HALF_Y = 0.05   # robot-local y half-width
-ABSORB_LOCATION = (-1.1, 0.0, 0.4)
-
-# Only record whether absorbed to avoid duplicate absorption
-ball_simple_state = {}  # name -> {"absorbed": bool}
+# =============================================================================
+# ABSORPTION MONITORING
+# Per-frame rectangular intake checks in robot-local coordinates.
+# =============================================================================
 
 def monitor_simple_init(ball_prefix="BALL_", ball_count=40):
     """Initialize ball_simple_state (call once)"""
@@ -442,12 +509,11 @@ def _monitor_absorption_for_robot(robot, ball_prefix="BALL_", ball_count=40, hal
     Generic absorption check for any robot.
     """
     global PING_STORED, STEEL_STORED
-    # Read robot current position (world coordinates)
+    # Robot pose in world coordinates
     robot_pos = np.array(robot.getField("translation").getSFVec3f(), dtype=float)
     rx, ry = float(robot_pos[0]), float(robot_pos[1])
-    # Use the original rotation handling (assumes rotation around z axis based on angle)
-    robor_rot = np.array(robot.getField("rotation").getSFRotation())
-    rangle = float(robor_rot[3])
+    robot_rot = np.array(robot.getField("rotation").getSFRotation())
+    rangle = float(robot_rot[3])
 
     for i in range(ball_count):
         name = f"{ball_prefix}{i}"
@@ -475,7 +541,7 @@ def _monitor_absorption_for_robot(robot, ball_prefix="BALL_", ball_count=40, hal
         x_ball_robot = x_rel * math.cos(-rangle) - y_rel * math.sin(-rangle)
         y_ball_robot = x_rel * math.sin(-rangle) + y_rel * math.cos(-rangle)
 
-        # Single attempt: use Robot.name to determine type, default 'ping'
+        # Determine type from robotName; default to ping
         name_field = node.getField("robotName").getSFString()
         ball_type = "ping"
         if name_field is not None:
@@ -492,13 +558,12 @@ def _monitor_absorption_for_robot(robot, ball_prefix="BALL_", ball_count=40, hal
                 absorbed = True
                 PING_STORED += 1
         elif ball_type == "steel":
-            # Per your logic: x_ball_robot > 0 and (x_ball_robot - 0.2 < half_x)
             if (x_ball_robot > 0) and (x_ball_robot < half_x - 0.01) and (abs(y_ball_robot) < half_y):
                 absorbed = True
                 STEEL_STORED += 1
 
         if absorbed:
-            # Absorption action: teleport and resetPhysics
+            # Absorb by teleporting outside arena and resetting physics
             node.getField("translation").setSFVec3f([absorb_location[0], absorb_location[1], absorb_location[2]])
             try:
                 node.resetPhysics()
@@ -508,54 +573,14 @@ def _monitor_absorption_for_robot(robot, ball_prefix="BALL_", ball_count=40, hal
             SCORE = PING_HIT * 4 + STEEL_HIT * 2 + STEEL_STORED * 1
             print(f"Score: {SCORE} | Ping Hit: {PING_HIT} | Steel Hit: {STEEL_HIT} | Steel Stored: {STEEL_STORED} | Ping Stored: {PING_STORED}")
 
-import random, math, numpy as np
-
-# ==== Main logic (randomize balls -> init monitoring -> waypoint queue -> non-blocking main loop) ====
+# =============================================================================
+# BOOTSTRAP
+# Initial randomization and startup file reset.
+# =============================================================================
 randomize_balls(seed=RANDOM_SEED, ensure_no_overlap=True)
 monitor_simple_init(ball_prefix=BALL_PREFIX, ball_count=BALL_COUNT)
 
-# waypoints are loaded from the external file controllers/supervisor_controller/dynamic_waypoints.txt
-import os, re, time
-
-# waypoint orientation aliases (radians)
-North = math.pi / 2
-East = 0.0
-South = -math.pi / 2
-West = math.pi
-
-REAL_TIME_DATA_DIR = os.path.join(os.path.dirname(__file__), "real_time_data")
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-WHO_IS_DEV_FILE = os.path.join(PROJECT_ROOT, "who_is_developing.txt")
-
-def _resolve_decision_making_dir():
-    """Select decision_making folder based on who_is_developing.txt (cyc/wly)."""
-    default_dir = os.path.join(PROJECT_ROOT, "decision_making")
-    try:
-        with open(WHO_IS_DEV_FILE, "r") as f:
-            dev = f.read().strip().lower()
-        if dev == "cyc":
-            return os.path.join(PROJECT_ROOT, "decision_making_cyc")
-        if dev == "wly":
-            return os.path.join(PROJECT_ROOT, "decision_making_wly")
-    except Exception:
-        pass
-    return default_dir
-
-DECISION_MAKING_DIR = _resolve_decision_making_dir()
-DECISION_REAL_TIME_DIR = os.path.join(DECISION_MAKING_DIR, "real_time_data")
-DYNAMIC_WAYPOINTS_FILE = os.path.join(REAL_TIME_DATA_DIR, "dynamic_waypoints.txt")
-WAYPOINTS_HISTORY_FILE = os.path.join(REAL_TIME_DATA_DIR, "waypoints_history.txt")
-WAYPOINT_STATUS_FILE = os.path.join(REAL_TIME_DATA_DIR, "waypoint_status.txt")
-BALL_POS_FILE = os.path.join(REAL_TIME_DATA_DIR, "ball_position.txt")
-CURRENT_POSITION_FILE = os.path.join(REAL_TIME_DATA_DIR, "current_position.txt")
-OBSTACLE_ROBOT_FILE = os.path.join(REAL_TIME_DATA_DIR, "obstacle_robot.txt")
-TIME_FILE = os.path.join(REAL_TIME_DATA_DIR, "time.txt")
-OBSTACLE_PLAN_FILE = os.path.join(REAL_TIME_DATA_DIR, "obstacle_plan.txt")
-SPEED_FILE = os.path.join(REAL_TIME_DATA_DIR, "speed.txt")
-VISIBLE_BALLS_FILE = os.path.join(REAL_TIME_DATA_DIR, "visible_balls.txt")
-
-# Clear contents of all .txt files in decision_making_cyc/real_time_data
-# and decision_making_wly/real_time_data at startup
+# Clear all runtime txt files at startup for both decision-making variants.
 for _dir in (
     os.path.join(PROJECT_ROOT, "decision_making_cyc", "real_time_data"),
     os.path.join(PROJECT_ROOT, "decision_making_wly", "real_time_data"),
@@ -576,7 +601,7 @@ for _dir in (
         except Exception:
             pass
 
-# Clear dynamic waypoints at startup before any other processing
+# Reset dynamic waypoint input file at startup.
 try:
     with open(DYNAMIC_WAYPOINTS_FILE, "w") as f:
         f.write("")
@@ -586,7 +611,7 @@ except Exception as e:
     except Exception:
         pass
 
-# Initialize speed.txt with DEFAULT_VELOCITY at startup
+# Initialize speed file with default cruise speed.
 try:
     with open(SPEED_FILE, "w") as f:
         f.write(f"{DEFAULT_VELOCITY}\n")
@@ -597,6 +622,10 @@ except Exception as e:
         pass
 
 def _load_dynamic_waypoint(path):
+    # -------------------------------------------------------------------------
+    # WAYPOINT PARSING HELPERS
+    # Parse dynamic waypoint input from shared txt file.
+    # -------------------------------------------------------------------------
     """Load a single waypoint from dynamic_waypoints.txt (read-only).
     Returns a single (x, y, orientation) tuple or None if file is empty/invalid.
     """
@@ -712,6 +741,10 @@ def _update_status_file(path, motion_active, has_waypoint):
 
 
 def _write_ball_positions(path):
+    # -------------------------------------------------------------------------
+    # REAL-TIME FILE WRITERS
+    # Export simulator state to txt files consumed by decision-making scripts.
+    # -------------------------------------------------------------------------
     """Write current positions of all balls into `path`.
     Format: one line per ball: (x, y, ping/metal) — overwrite atomically.
     Only records balls with x >= -1.0
@@ -923,13 +956,16 @@ def _write_visible_balls(path, viewfield_deg=60.0, visible_range_m=0.8):
         except Exception:
             pass
 
-# ==== Initialize robots ====
+# =============================================================================
+# MOTION CONTROLLER INITIALIZATION
+# Build controller instances for main robot and obstacle robots.
+# =============================================================================
 # Main robot: single waypoint navigation from dynamic_waypoints.txt
 main_trans = main_robot.getField("translation")
 main_rot = main_robot.getField("rotation")
 main_motion = MotionController(main_trans, main_rot, dt, cycle_mode=False)
 
-# Obstacle robots: cycle through waypoints from obstacle_plan.txt (optional)
+# Obstacle robots: cyclic waypoint navigation from obstacle_plan.txt (optional)
 obstacle_motions = []
 obstacle_waypoints = _load_waypoint_list_from_file(OBSTACLE_PLAN_FILE)
 
@@ -964,12 +1000,12 @@ if current_waypoint is not None:
     x, y, ang = current_waypoint
     main_motion.start(x, y, velocity=None, angle=ang)
 
-# Cruise script execution parameters
-CRUISE_SCRIPT_PATH = os.path.join(DECISION_MAKING_DIR, "waypoints_cruise.py")
-CRUISE_INTERVAL_FRAMES = 15  # Execute cruise script every N frames
 frame_counter = 0
 
-# Non-blocking main loop
+# =============================================================================
+# MAIN NON-BLOCKING LOOP
+# Drive motion, absorb balls, sync files, and run cruise script periodically.
+# =============================================================================
 while supervisor.step(TIME_STEP) != -1:
     # ==== Update main robot (single waypoint navigation) ====
     # Check if dynamic_waypoints.txt has changed
