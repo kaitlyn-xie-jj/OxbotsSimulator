@@ -46,6 +46,22 @@ Available values:
 - `cyc` -> uses `decision_making_cyc/waypoints_cruise.py`
 - `wly` -> uses `decision_making_wly/waypoints_cruise.py`
 
+### Step 2.1 (CYC only) Select strategy mode
+
+In `decision_making_cyc/waypoints_cruise.py`, multiple modes are available:
+
+- `'random'`
+- `'nearest'`
+- `'realistic_nearest'`
+- `'planned'`
+- `'improved_nearest'`
+
+Switch mode by editing the `DEFAULT_MODE` assignment (currently around line 62), for example:
+
+```python
+DEFAULT_MODE = 'improved_nearest'
+```
+
 ### Step 3. Run simulation
 
 `supervisor_controller` will automatically:
@@ -193,6 +209,22 @@ who_is_developing.txt
 
 - `cyc` -> 使用 `decision_making_cyc/waypoints_cruise.py`
 - `wly` -> 使用 `decision_making_wly/waypoints_cruise.py`
+
+### Step 2.1（仅 CYC）选择策略模式
+
+`decision_making_cyc/waypoints_cruise.py` 里目前可选模式包括：
+
+- `'random'`
+- `'nearest'`
+- `'realistic_nearest'`
+- `'planned'`
+- `'improved_nearest'`
+
+通过修改 `DEFAULT_MODE` 来切换策略（当前大约在第 62 行），例如：
+
+```python
+DEFAULT_MODE = 'improved_nearest'
+```
 
 ### Step 3. 直接运行仿真
 
