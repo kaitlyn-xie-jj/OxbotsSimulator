@@ -45,12 +45,15 @@ SPEED_FILE = os.path.join(BASE_DIR, "speed.txt")
 VISIBLE_BALLS_FILE = os.path.join(BASE_DIR, "visible_balls.txt")
 
 PLANNED_WAYPOINTS_FILE = os.path.join(THIS_DIR, "planned_waypoints.txt")
+MODE_FILE = os.path.join(THIS_DIR, "mode.txt")
 
 PLANNED_INDEX_FILE = os.path.join(REAL_TIME_DIR, "planned_waypoints_index.txt")
 TEMP_STATE_FILE = os.path.join(REAL_TIME_DIR, "search_state.txt")
 WAYPOINTS_STACK_FILE = os.path.join(REAL_TIME_DIR, "waypoints_stack.txt")
 RADAR_HISTORY_FILE = os.path.join(REAL_TIME_DIR, "radar_memory.txt")
 COLLISION_STATUS_FILE = os.path.join(REAL_TIME_DIR, "collision_avoiding_status.txt")
+COLLISION_COUNTER_FILE = os.path.join(REAL_TIME_DIR, "collision_counter.txt")
+COLLISION_COUNTER_STATE_FILE = os.path.join(REAL_TIME_DIR, "collision_counter_state.txt")
 DYNAMIC_WAYPOINTS_TYPE_FILE = os.path.join(REAL_TIME_DIR, "dynamic_waypoints_type.txt")
 ROBOT_AROUND_FILE = os.path.join(REAL_TIME_DIR, "robot_around.txt")
 LAST_BEST_VECTOR_FILE = os.path.join(REAL_TIME_DIR, "last_best_vector.txt")
@@ -62,6 +65,7 @@ BALL_LIST_MEMORY_FILE = os.path.join(REAL_TIME_DIR, "ball_memory.txt")
 UNSEEN_TILE_MEMORY_FILE = os.path.join(REAL_TIME_DIR, "unseen_tile_memory.txt")
 LAST_SECOND_TILES_FILE = os.path.join(REAL_TIME_DIR, "last_second_tiles.txt")
 UNSEEN_REGIONS_FILE = os.path.join(REAL_TIME_DIR, "unseen_regions.txt")
+COLLISION_AVOIDING_CONFIG_FILE = os.path.join(THIS_DIR, "collision_avoiding.txt")
 
 # =============================================================================
 # GLOBAL CONSTANTS
@@ -143,6 +147,14 @@ def _read_status(path: str) -> Optional[str]:
         return None
 
 
+def _read_mode(path: str = MODE_FILE) -> Optional[str]:
+    mode = _read_status(path)
+    if mode is None:
+        return None
+    mode = mode.strip().lower()
+    return mode if mode else None
+
+
 def _atomic_write(path: str, content: str) -> bool:
     try:
         tmp = path + ".tmp"
@@ -153,6 +165,124 @@ def _atomic_write(path: str, content: str) -> bool:
     except Exception as e:
         # print(f"[waypoints_cruise] write failed: {e}", file=sys.stderr)
         return False
+
+
+def _read_collision_counter(path: str = COLLISION_COUNTER_FILE) -> tuple[int, list[float]]:
+    count = 0
+    times: list[float] = []
+    try:
+        with open(path, "r") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line:
+                    continue
+                if line.startswith("count="):
+                    try:
+                        count = int(line.split("=", 1)[1].strip())
+                    except Exception:
+                        pass
+                elif line.startswith("time="):
+                    try:
+                        times.append(float(line.split("=", 1)[1].strip()))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return count, times
+
+
+def _write_collision_counter(count: int,
+                             times: list[float],
+                             path: str = COLLISION_COUNTER_FILE) -> bool:
+    content = f"count={int(count)}\n" + "".join(f"time={t:.3f}\n" for t in times)
+    return _atomic_write(path, content)
+
+
+def _read_collision_state(path: str = COLLISION_COUNTER_STATE_FILE) -> tuple[Optional[float], bool]:
+    last_time: Optional[float] = None
+    in_collision = False
+    try:
+        with open(path, "r") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line:
+                    continue
+                if line.startswith("last_time="):
+                    try:
+                        last_time = float(line.split("=", 1)[1].strip())
+                    except Exception:
+                        last_time = None
+                elif line.startswith("in_collision="):
+                    val = line.split("=", 1)[1].strip().lower()
+                    in_collision = val in ("1", "true", "yes", "on")
+    except Exception:
+        pass
+    return last_time, in_collision
+
+
+def _write_collision_state(last_time: Optional[float],
+                           in_collision: bool,
+                           path: str = COLLISION_COUNTER_STATE_FILE) -> bool:
+    last_time_str = "" if last_time is None else f"{last_time:.6f}"
+    content = f"last_time={last_time_str}\nin_collision={1 if in_collision else 0}\n"
+    return _atomic_write(path, content)
+
+
+def _process_collision_counter_from_history(
+    history_file: str = RADAR_HISTORY_FILE,
+    counter_file: str = COLLISION_COUNTER_FILE,
+    state_file: str = COLLISION_COUNTER_STATE_FILE,
+    threshold: float = -0.001,
+) -> None:
+    """Count a collision only when distances recover above threshold after being below it."""
+    entries: list[tuple[float, list[float]]] = []
+    try:
+        with open(history_file, "r") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line:
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 5:
+                    continue
+                try:
+                    t = float(parts[0])
+                    dists = [float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])]
+                except Exception:
+                    continue
+                entries.append((t, dists))
+    except Exception:
+        return
+
+    if not entries:
+        return
+
+    entries.sort(key=lambda item: item[0])
+    last_time, in_collision = _read_collision_state(state_file)
+
+    # First-time initialization: set baseline state, do not backfill old collisions.
+    if last_time is None:
+        latest_t, latest_dists = entries[-1]
+        latest_in_collision = any(d < threshold for d in latest_dists)
+        _write_collision_state(latest_t, latest_in_collision, state_file)
+        return
+
+    new_entries = [(t, dists) for (t, dists) in entries if t > last_time + 1e-9]
+    if not new_entries:
+        return
+
+    count, times = _read_collision_counter(counter_file)
+    for t, dists in new_entries:
+        now_in_collision = any(d < threshold for d in dists)
+        if now_in_collision:
+            in_collision = True
+        elif in_collision:
+            count += 1
+            times.append(t)
+            in_collision = False
+
+    _write_collision_counter(count, times, counter_file)
+    _write_collision_state(new_entries[-1][0], in_collision, state_file)
 
 
 def _stack_current_waypoint(stack_file: str = WAYPOINTS_STACK_FILE,
@@ -311,6 +441,58 @@ def _read_time_seconds(path: str) -> Optional[float]:
         return None
 
 
+def _read_collision_avoiding_config(
+    path: str = COLLISION_AVOIDING_CONFIG_FILE,
+) -> tuple[bool, Optional[float]]:
+    """Read collision avoiding runtime config.
+
+    Supported values in collision_avoiding.txt:
+    - "off": disable collision avoiding.
+    - "smart_factor = <number>": override smart_factor.
+
+    Returns:
+        (enabled, smart_factor_override)
+    """
+    try:
+        with open(path, "r") as f:
+            raw = f.read()
+    except Exception:
+        return True, None
+
+    text = raw.strip()
+    if not text:
+        return True, None
+
+    if text.lower() == "off":
+        return False, None
+
+    m = re.search(r"smart_factor\s*=\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)", text, re.IGNORECASE)
+    if m:
+        try:
+            return True, float(m.group(1))
+        except Exception:
+            return True, None
+
+    return True, None
+
+
+def _maybe_run_collision_avoiding(
+    current_file: str = CURRENT_POSITION_FILE,
+    default_smart_factor: float = 2.0,
+) -> bool:
+    """Run collision avoiding based on collision_avoiding.txt config."""
+    enabled, smart_factor_override = _read_collision_avoiding_config()
+    if not enabled:
+        return False
+
+    smart_factor = (
+        smart_factor_override
+        if smart_factor_override is not None
+        else default_smart_factor
+    )
+    return collision_avoiding_v3(current_file, smart_factor=smart_factor)
+
+
 def _read_state_pair(path: str) -> Optional[tuple[float, float]]:
     try:
         with open(path, "r") as f:
@@ -448,7 +630,7 @@ def in_view(point,
     dist = math.hypot(dx, dy)
     if dist > Range:
         return False
-    if dist < 0.15:
+    if dist < 0.1:  # Too close to see clearly (inside robot radius).
         return False
 
     # FOV check around current bearing.
@@ -576,7 +758,7 @@ def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> l
         else:
             continue
 
-        dist = max(0.0, dist)
+        # dist = max(0.0, dist)
         if dist <= max_range:
             prev = hits.get(direction)
             if prev is None or dist < prev:
@@ -620,6 +802,7 @@ def radar_sensor(max_range: float = RADAR_MAX_RANGE, corridor: float = 0.2) -> l
         )
         history_lines.append(record)
         _atomic_write(RADAR_HISTORY_FILE, "\n".join(history_lines) + "\n")
+        _process_collision_counter_from_history()
 
     # print([(direction, dist) for direction, dist in hits.items()])
     return [(direction, dist) for direction, dist in hits.items()]
@@ -678,7 +861,7 @@ def wall_only_radar(current_file: str = CURRENT_POSITION_FILE) -> dict[str, floa
         else:
             continue
 
-        dist = max(0.0, dist)
+        # dist = max(0.0, dist)
         if dist <= max_range:
             prev = predicted.get(direction)
             if prev is None or dist < prev:
@@ -1004,6 +1187,7 @@ def collision_avoiding_v3(current_file: str = CURRENT_POSITION_FILE,
         safety_factor = 8 + (min_radar_distance / trigger_distance) * 20 if trigger_distance > 0 else 10.0
         # safety_factor = 20
         # print(f"Safety factor: {safety_factor}, min radar distance: {min_radar_distance}, trigger distance: {trigger_distance}", file=sys.stderr)
+        # print(f"Smart factor: {smart_factor}", file=sys.stderr)
 
         for vec in filtered_vectors:
             score = 0.0
@@ -1192,7 +1376,7 @@ def mode_realistic_nearest(status_file: str = WAYPOINT_STATUS_FILE,
                           current_file: str = CURRENT_POSITION_FILE) -> int:
     """Realistic nearest mode: choose nearest ball from visible_balls.txt only."""
 
-    if collision_avoiding_v3(current_file, smart_factor=3.0):
+    if _maybe_run_collision_avoiding(current_file, default_smart_factor=2.0):
         return 0
 
     sim_time = _read_time_seconds(TIME_FILE)
@@ -1584,7 +1768,7 @@ def mode_improved_nearest(status_file: str = WAYPOINT_STATUS_FILE,
     
     update_ball_memory(visible_balls_file=visible_balls_file)
 
-    if collision_avoiding_v3(current_file, smart_factor=3.0):
+    if _maybe_run_collision_avoiding(current_file, default_smart_factor=2.0):
         return 0
 
     sim_time = _read_time_seconds(TIME_FILE)
@@ -1705,7 +1889,7 @@ def mode_nearest(status_file: str = WAYPOINT_STATUS_FILE,
                  current_file: str = CURRENT_POSITION_FILE) -> int:
     """Nearest mode: if status == 'reached', pick nearest ball to robot and write it as waypoint."""
 
-    if collision_avoiding_v3(current_file):
+    if _maybe_run_collision_avoiding(current_file, default_smart_factor=2.0):
         return 0
 
     sim_time = _read_time_seconds(TIME_FILE)
@@ -1751,10 +1935,10 @@ def mode_planned(status_file: str = WAYPOINT_STATUS_FILE,
                  current_file: str = CURRENT_POSITION_FILE) -> int:
     """Planned mode: cycle through planned_waypoints.txt in order."""
 
-    if collision_avoiding_v3(current_file, smart_factor=1.0):
+    if _maybe_run_collision_avoiding(current_file, default_smart_factor=1.0):
         return 0
     
-    set_velocity(0.7)
+    set_velocity(0.3)
 
     sim_time = _read_time_seconds(TIME_FILE)
     if sim_time is not None and sim_time > 170.0:
@@ -1811,8 +1995,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    # precedence: CLI arg -> MODE env var -> DEFAULT_MODE
-    mode = args.mode or os.environ.get("MODE") or DEFAULT_MODE
+    # precedence: mode.txt -> CLI arg -> MODE env var -> DEFAULT_MODE
+    mode = _read_mode(MODE_FILE) or args.mode or os.environ.get("MODE") or DEFAULT_MODE
     mode = mode.strip().lower()
 
     handler = _MODE_HANDLERS.get(mode)

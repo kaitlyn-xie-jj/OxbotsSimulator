@@ -56,7 +56,7 @@ CLEARANCE = 0.05
 # Robot-local absorption area
 ABSORB_BOX_HALF_X = 0.12
 ABSORB_BOX_HALF_Y = 0.05
-ABSORB_LOCATION = (-1.1, 0.0, 0.4)
+ABSORB_LOCATION = (-1.1, 0.0, 0.1)
 
 # Waypoint orientation aliases (radians)
 North = math.pi / 2
@@ -112,6 +112,8 @@ TIME_FILE = os.path.join(REAL_TIME_DATA_DIR, "time.txt")
 OBSTACLE_PLAN_FILE = os.path.join(REAL_TIME_DATA_DIR, "obstacle_plan.txt")
 SPEED_FILE = os.path.join(REAL_TIME_DATA_DIR, "speed.txt")
 VISIBLE_BALLS_FILE = os.path.join(REAL_TIME_DATA_DIR, "visible_balls.txt")
+BALL_TAKEN_FILE = os.path.join(REAL_TIME_DATA_DIR, "ball_taken_number.txt")
+BALL_TAKEN_HISTORY_FILE = os.path.join(REAL_TIME_DATA_DIR, "ball_taken_history.txt")
 CRUISE_SCRIPT_PATH = os.path.join(DECISION_MAKING_DIR, "waypoints_cruise.py")
 
 
@@ -124,6 +126,7 @@ STEEL_STORED = 0
 PING_STORED = 0
 STEEL_HIT = 0
 PING_HIT = 0
+MAIN_BALL_TAKEN = 0
 
 # Tracks whether each ball has been absorbed to prevent double counting
 ball_simple_state = {}  # name -> {"absorbed": bool}
@@ -508,7 +511,7 @@ def _monitor_absorption_for_robot(robot, ball_prefix="BALL_", ball_count=40, hal
     """
     Generic absorption check for any robot.
     """
-    global PING_STORED, STEEL_STORED
+    global PING_STORED, STEEL_STORED, MAIN_BALL_TAKEN
     # Robot pose in world coordinates
     robot_pos = np.array(robot.getField("translation").getSFVec3f(), dtype=float)
     rx, ry = float(robot_pos[0]), float(robot_pos[1])
@@ -570,8 +573,11 @@ def _monitor_absorption_for_robot(robot, ball_prefix="BALL_", ball_count=40, hal
             except Exception:
                 pass
             ball_simple_state[name]["absorbed"] = True
+            if robot == main_robot:
+                MAIN_BALL_TAKEN += 1
+                _append_ball_taken_history(BALL_TAKEN_HISTORY_FILE, supervisor.getTime(), MAIN_BALL_TAKEN)
             SCORE = PING_HIT * 4 + STEEL_HIT * 2 + STEEL_STORED * 1
-            print(f"Score: {SCORE} | Ping Hit: {PING_HIT} | Steel Hit: {STEEL_HIT} | Steel Stored: {STEEL_STORED} | Ping Stored: {PING_STORED}")
+            # print(f"Score: {SCORE} | Ping Hit: {PING_HIT} | Steel Hit: {STEEL_HIT} | Steel Stored: {STEEL_STORED} | Ping Stored: {PING_STORED}")
 
 # =============================================================================
 # BOOTSTRAP
@@ -618,6 +624,26 @@ try:
 except Exception as e:
     try:
         print(f"[startup] failed to set speed.txt: {e}")
+    except Exception:
+        pass
+
+# Initialize main robot taken-ball file.
+try:
+    with open(BALL_TAKEN_FILE, "w") as f:
+        f.write("0\n")
+except Exception as e:
+    try:
+        print(f"[startup] failed to set ball_taken_number.txt: {e}")
+    except Exception:
+        pass
+
+# Initialize main robot ball-taken history file.
+try:
+    with open(BALL_TAKEN_HISTORY_FILE, "w") as f:
+        f.write("")
+except Exception as e:
+    try:
+        print(f"[startup] failed to set ball_taken_history.txt: {e}")
     except Exception:
         pass
 
@@ -849,6 +875,32 @@ def _read_speed_mps(path, default_value):
     except Exception:
         return default_value
 
+def _write_ball_taken(path, count):
+    """Write main robot total taken balls to file — overwrite atomically."""
+    try:
+        tmp = path + '.tmp'
+        with open(tmp, 'w') as f:
+            f.write(f"{int(count)}\n")
+        os.replace(tmp, path)
+    except Exception as e:
+        try:
+            print(f"[ball_taken] failed to write: {e}")
+        except Exception:
+            pass
+
+def _append_ball_taken_history(path, taken_time_s, taken_count):
+    """Append main-robot ball taken history as: <time_seconds>,<cumulative_count>."""
+    try:
+        t = float(taken_time_s)
+        c = int(taken_count)
+        with open(path, 'a') as f:
+            f.write(f"{t:.3f},{c}\n")
+    except Exception as e:
+        try:
+            print(f"[ball_taken_history] failed to write: {e}")
+        except Exception:
+            pass
+
 def _write_visible_balls(path, viewfield_deg=60.0, visible_range_m=0.8):
     """Write visible balls within viewfield and range to file — overwrite atomically."""
     try:
@@ -929,8 +981,8 @@ def _write_visible_balls(path, viewfield_deg=60.0, visible_range_m=0.8):
                 if dist_sq > range_sq:
                     continue
                 
-                if dist_sq < 0.15*0.15:
-                    continue
+                # if dist_sq < 0.15*0.15:
+                #     continue
 
                 angle = math.atan2(y_robot, x_robot)
                 if abs(angle) > half_fov:
@@ -1007,6 +1059,10 @@ frame_counter = 0
 # Drive motion, absorb balls, sync files, and run cruise script periodically.
 # =============================================================================
 while supervisor.step(TIME_STEP) != -1:
+    if supervisor.getTime() > 185.0:
+        print("[Supervisor] Simulation time exceeded 185s. Stopping simulation.")
+        break
+
     # ==== Update main robot (single waypoint navigation) ====
     # Check if dynamic_waypoints.txt has changed
     try:
@@ -1054,7 +1110,7 @@ while supervisor.step(TIME_STEP) != -1:
     for i, obs_robot in enumerate(obstacle_robots):
         # Different absorb locations for each obstacle robot to avoid overlap
         absorb_x = 1.1 + i * 0.1
-        _monitor_absorption_for_robot(obs_robot, ball_prefix=BALL_PREFIX, ball_count=BALL_COUNT, half_x=ABSORB_BOX_HALF_X, half_y=ABSORB_BOX_HALF_Y, absorb_location=(absorb_x, 0.0, 0.4))
+        _monitor_absorption_for_robot(obs_robot, ball_prefix=BALL_PREFIX, ball_count=BALL_COUNT, half_x=ABSORB_BOX_HALF_X, half_y=ABSORB_BOX_HALF_Y, absorb_location=(absorb_x, 0.0, 0.1))
 
     # 2.5) Write per-frame ball positions to file
     _write_ball_positions(BALL_POS_FILE)
@@ -1070,6 +1126,9 @@ while supervisor.step(TIME_STEP) != -1:
 
     # 2.8) Write visible balls for main robot
     _write_visible_balls(VISIBLE_BALLS_FILE)
+
+    # 2.9) Write main robot taken-ball count
+    _write_ball_taken(BALL_TAKEN_FILE, MAIN_BALL_TAKEN)
 
     # 3) If main robot motion completed, record as 'reached' and wait for next dynamic waypoint
     if not main_motion.active and current_waypoint is not None:
