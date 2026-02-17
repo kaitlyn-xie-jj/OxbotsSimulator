@@ -28,7 +28,7 @@ dt = TIME_STEP / 1000.0  # seconds
 # GLOBAL CONSTANTS
 # Tunable parameters for motion, balls, absorption, and scheduling.
 # =============================================================================
-RANDOM_SEED = 1236
+DEFAULT_RANDOM_SEED = 1236
 DEFAULT_VELOCITY = 0.3  # m/s
 DEFAULT_ANGULAR_VELOCITY_MAIN = 90  # deg/s
 DEFAULT_ANGULAR_VELOCITY_OBSTACLE = 90  # deg/s
@@ -78,10 +78,21 @@ FIELD_VIEWER_PORT = 5001
 THIS_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(THIS_DIR, "..", ".."))
 WHO_IS_DEV_FILE = os.path.join(PROJECT_ROOT, "who_is_developing.txt")
+RANDOM_SEED_FILE = os.path.join(THIS_DIR, "random_seed.txt")
 REAL_TIME_DATA_DIR = os.path.join(THIS_DIR, "real_time_data")
 FIELD_VIEWER_PATH = os.path.abspath(
     os.path.join(THIS_DIR, "..", "..", "tools", "field_viewer", "server.py")
 )
+
+
+def _load_random_seed(path, default_seed=DEFAULT_RANDOM_SEED):
+    """Load random seed from file, fallback to default on any error."""
+    try:
+        with open(path, "r") as f:
+            raw = f.read().strip()
+        return int(raw)
+    except Exception:
+        return default_seed
 
 
 def _resolve_decision_making_dir():
@@ -101,6 +112,7 @@ def _resolve_decision_making_dir():
 
 DECISION_MAKING_DIR = _resolve_decision_making_dir()
 DECISION_REAL_TIME_DIR = os.path.join(DECISION_MAKING_DIR, "real_time_data")
+RANDOM_SEED = _load_random_seed(RANDOM_SEED_FILE)
 
 DYNAMIC_WAYPOINTS_FILE = os.path.join(REAL_TIME_DATA_DIR, "dynamic_waypoints.txt")
 WAYPOINTS_HISTORY_FILE = os.path.join(REAL_TIME_DATA_DIR, "waypoints_history.txt")
@@ -115,6 +127,7 @@ VISIBLE_BALLS_FILE = os.path.join(REAL_TIME_DATA_DIR, "visible_balls.txt")
 BALL_TAKEN_FILE = os.path.join(REAL_TIME_DATA_DIR, "ball_taken_number.txt")
 BALL_TAKEN_HISTORY_FILE = os.path.join(REAL_TIME_DATA_DIR, "ball_taken_history.txt")
 CRUISE_SCRIPT_PATH = os.path.join(DECISION_MAKING_DIR, "waypoints_cruise.py")
+SUPERVISOR_STATUS_FILE = os.path.join(REAL_TIME_DATA_DIR, "supervisor_controller_status.txt")
 
 
 # =============================================================================
@@ -774,9 +787,11 @@ def _write_ball_positions(path):
     """Write current positions of all balls into `path`.
     Format: one line per ball: (x, y, ping/metal) — overwrite atomically.
     Only records balls with x >= -1.0
+    Returns number of written ball records, or None on failure.
     """
     try:
         tmp = path + '.tmp'
+        written_count = 0
         with open(tmp, 'w') as f:
             for i in range(BALL_COUNT):
                 name = f"{BALL_PREFIX}{i}"
@@ -801,13 +816,16 @@ def _write_ball_positions(path):
                 except Exception:
                     pass
                 f.write(f"({x:.6f}, {y:.6f}, {typ.upper()})\n")
+                written_count += 1
         os.replace(tmp, path)
+        return written_count
     except Exception as e:
         # non-fatal: print to stdout for debugging
         try:
             print(f"[ball_positions] failed to write positions: {e}")
         except Exception:
             pass
+        return None
 
 
 def _write_current_position(path):
@@ -898,6 +916,19 @@ def _append_ball_taken_history(path, taken_time_s, taken_count):
     except Exception as e:
         try:
             print(f"[ball_taken_history] failed to write: {e}")
+        except Exception:
+            pass
+
+def _write_supervisor_status(path, status):
+    """Write supervisor controller runtime status to file — overwrite atomically."""
+    try:
+        tmp = path + '.tmp'
+        with open(tmp, 'w') as f:
+            f.write(f"{status}\n")
+        os.replace(tmp, path)
+    except Exception as e:
+        try:
+            print(f"[supervisor_status] failed to write: {e}")
         except Exception:
             pass
 
@@ -1054,6 +1085,9 @@ if current_waypoint is not None:
 
 frame_counter = 0
 
+# Mark supervisor status as running at initiation.
+_write_supervisor_status(SUPERVISOR_STATUS_FILE, "runnung")
+
 # =============================================================================
 # MAIN NON-BLOCKING LOOP
 # Drive motion, absorb balls, sync files, and run cruise script periodically.
@@ -1061,6 +1095,7 @@ frame_counter = 0
 while supervisor.step(TIME_STEP) != -1:
     if supervisor.getTime() > 185.0:
         print("[Supervisor] Simulation time exceeded 185s. Stopping simulation.")
+        _write_supervisor_status(SUPERVISOR_STATUS_FILE, "exited")
         break
 
     # ==== Update main robot (single waypoint navigation) ====
@@ -1113,7 +1148,11 @@ while supervisor.step(TIME_STEP) != -1:
         _monitor_absorption_for_robot(obs_robot, ball_prefix=BALL_PREFIX, ball_count=BALL_COUNT, half_x=ABSORB_BOX_HALF_X, half_y=ABSORB_BOX_HALF_Y, absorb_location=(absorb_x, 0.0, 0.1))
 
     # 2.5) Write per-frame ball positions to file
-    _write_ball_positions(BALL_POS_FILE)
+    written_ball_count = _write_ball_positions(BALL_POS_FILE)
+    if written_ball_count == 0:
+        print("[Supervisor] ball_position.txt is empty. Stopping simulation.")
+        _write_supervisor_status(SUPERVISOR_STATUS_FILE, "exited")
+        break
     
     # 2.6) Write robot current position to file
     _write_current_position(CURRENT_POSITION_FILE)
@@ -1139,4 +1178,5 @@ while supervisor.step(TIME_STEP) != -1:
     SCORE = PING_HIT * 4 + STEEL_HIT * 2 + STEEL_STORED * 1
 
 # Exit
+_write_supervisor_status(SUPERVISOR_STATUS_FILE, "exited")
 print("Supervisor controller exiting.")
