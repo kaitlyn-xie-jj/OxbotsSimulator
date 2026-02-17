@@ -37,6 +37,8 @@ BALLS_FILE = os.path.join(DATA_DIR, "ball_position.txt")
 VISIBLE_FILE = os.path.join(DATA_DIR, "visible_balls.txt")
 OBSTACLES_FILE = os.path.join(DATA_DIR, "obstacle_robot.txt")
 DYNAMIC_FILE = os.path.join(DATA_DIR, "dynamic_waypoints.txt")
+RANDOM_SEED_FILE = os.path.join(PROJECT_ROOT, "controllers", "supervisor_controller", "random_seed.txt")
+BALL_TAKEN_HISTORY_FILE = os.path.join(DATA_DIR, "ball_taken_history.txt")
 
 STACK_FILE = os.path.join(DECISION_MAKING_DIR, "real_time_data", "waypoints_stack.txt")
 ROBOT_AROUND_FILE = os.path.join(DECISION_MAKING_DIR, "real_time_data", "robot_around.txt")
@@ -45,6 +47,9 @@ TILE_SEEN_TIME_FILE = os.path.join(DECISION_MAKING_DIR, "real_time_data", "tile_
 BALL_TILE_MEMORY_FILE = os.path.join(DECISION_MAKING_DIR, "real_time_data", "ball_tile_memory.txt")
 UNSEEN_TILE_MEMORY_FILE = os.path.join(DECISION_MAKING_DIR, "real_time_data", "unseen_tile_memory.txt")
 UNSEEN_REGIONS_FILE = os.path.join(DECISION_MAKING_DIR, "real_time_data", "unseen_regions.txt")
+MODE_FILE = os.path.join(DECISION_MAKING_DIR, "mode.txt")
+COLLISION_AVOIDING_FILE = os.path.join(DECISION_MAKING_DIR, "collision_avoiding.txt")
+COLLISION_COUNTER_FILE = os.path.join(DECISION_MAKING_DIR, "real_time_data", "collision_counter.txt")
 
 
 def _read_lines(path: str) -> list[str]:
@@ -53,6 +58,37 @@ def _read_lines(path: str) -> list[str]:
             return [line.strip() for line in f if line.strip()]
     except Exception:
         return []
+
+
+def _read_text(path: str) -> str:
+    try:
+        with open(path, "r") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def _read_first_line_number(path: str) -> str:
+    try:
+        with open(path, "r") as f:
+            first = f.readline().strip()
+    except Exception:
+        return ""
+    if not first:
+        return ""
+    m = re.search(r"[-+]?\d*\.?\d+", first)
+    return m.group(0) if m else ""
+
+
+def _read_last_line(path: str) -> str:
+    try:
+        with open(path, "r") as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except Exception:
+        return ""
+    if not lines:
+        return ""
+    return lines[-1]
 
 
 def _parse_tuple(line: str) -> list[str]:
@@ -410,6 +446,16 @@ def _get_unseen_regions():
     return out
 
 
+def _get_text_status():
+    return {
+        "mode": _read_text(MODE_FILE),
+        "collision_avoiding": _read_text(COLLISION_AVOIDING_FILE),
+        "random_seed": _read_text(RANDOM_SEED_FILE),
+        "collision_counter": _read_first_line_number(COLLISION_COUNTER_FILE),
+        "last_ball_taken": _read_last_line(BALL_TAKEN_HISTORY_FILE),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, payload, status=200):
         body = json.dumps(payload).encode("utf-8")
@@ -471,6 +517,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/data/unseen-regions":
             self._send_json({"tiles": _get_unseen_regions()})
+            return
+        if path == "/data/text-status":
+            self._send_json(_get_text_status())
             return
 
         self._send_text("not found", 404, "text/plain")

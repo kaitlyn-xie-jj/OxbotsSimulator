@@ -1084,6 +1084,7 @@ if current_waypoint is not None:
     main_motion.start(x, y, velocity=None, angle=ang)
 
 frame_counter = 0
+ball_taken_180_logged = False
 
 # Mark supervisor status as running at initiation.
 _write_supervisor_status(SUPERVISOR_STATUS_FILE, "runnung")
@@ -1093,7 +1094,13 @@ _write_supervisor_status(SUPERVISOR_STATUS_FILE, "runnung")
 # Drive motion, absorb balls, sync files, and run cruise script periodically.
 # =============================================================================
 while supervisor.step(TIME_STEP) != -1:
-    if supervisor.getTime() > 185.0:
+    sim_time = supervisor.getTime()
+
+    if (sim_time > 180.0) and (not ball_taken_180_logged):
+        _append_ball_taken_history(BALL_TAKEN_HISTORY_FILE, 180.0, MAIN_BALL_TAKEN)
+        ball_taken_180_logged = True
+
+    if sim_time > 185.0:
         print("[Supervisor] Simulation time exceeded 185s. Stopping simulation.")
         _write_supervisor_status(SUPERVISOR_STATUS_FILE, "exited")
         break

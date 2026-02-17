@@ -65,7 +65,7 @@ DEFAULT_COLLISION_COUNTER_FILE = os.path.join(PROJECT_ROOT, "decision_making_cyc
 DEFAULT_SUPERVISOR_STATUS_FILE = os.path.join(PROJECT_ROOT, "controllers", "supervisor_controller", "real_time_data", "supervisor_controller_status.txt")
 DEFAULT_RANDOM_SEED_FILE = os.path.join(PROJECT_ROOT, "controllers", "supervisor_controller", "random_seed.txt")
 
-DEFAULT_BENCHMARK_MODES = ["nearest", "realistic_nearest", "improved_nearest", "planned"]
+DEFAULT_BENCHMARK_MODES = ["realistic_nearest", "improved_nearest","nearest",  "planned"]
 DEFAULT_AVOIDANCE_SETTINGS = ["off", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
 
 
@@ -382,6 +382,36 @@ def write_text_file(path: str, content: str) -> None:
     log_info(f"写入文件：{path}")
 
 
+def ensure_file_ends_with_newline(path: str) -> None:
+    try:
+        if not os.path.exists(path):
+            return
+        with open(path, "rb+") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            if size == 0:
+                return
+            f.seek(-1, os.SEEK_END)
+            last = f.read(1)
+            if last not in (b"\n", b"\r"):
+                f.seek(0, os.SEEK_END)
+                f.write(b"\n")
+                f.flush()
+                os.fsync(f.fileno())
+                log_warn(f"检测到 CSV 末尾缺少换行，已自动补齐：{path}")
+    except Exception as e:
+        log_warn(f"检查/修复 CSV 末尾换行失败：{path} ({e})")
+
+
+def append_csv_row(path: str, fieldnames: list, row: dict) -> None:
+    ensure_file_ends_with_newline(path)
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
+        writer.writerow(row)
+        f.flush()
+        os.fsync(f.fileno())
+
+
 def parse_ball_taken_history_last_line(path: str) -> Tuple[Optional[float], Optional[int], Optional[str]]:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -407,16 +437,38 @@ def parse_ball_taken_history_last_line(path: str) -> Tuple[Optional[float], Opti
 def parse_collision_counter(path: str) -> Optional[int]:
     try:
         with open(path, "r", encoding="utf-8") as f:
-            raw = f.read().strip()
-        if not raw:
+            lines = [line.strip() for line in f if line.strip()]
+
+        if not lines:
             log_warn(f"collision_counter 为空：{path}")
             return None
-        if "=" in raw:
-            raw = raw.split("=", 1)[1].strip()
-        return int(float(raw))
+
+        count_value = None
+        for line in lines:
+            if line.lower().startswith("count="):
+                raw = line.split("=", 1)[1].strip()
+                count_value = int(float(raw))
+                break
+
+        if count_value is None:
+            raw = lines[0]
+            if "=" in raw:
+                raw = raw.split("=", 1)[1].strip()
+            count_value = int(float(raw))
+
+        return count_value
     except Exception as e:
         log_warn(f"解析 collision_counter 失败：{path} ({e})")
         return None
+
+
+def normalize_collision_counter_file(path: str, count_value: Optional[int]) -> None:
+    if count_value is None:
+        return
+    try:
+        write_text_file(path, f"count={int(count_value)}\n")
+    except Exception as e:
+        log_warn(f"标准化 collision_counter 失败：{path} ({e})")
 
 
 def reset_runtime_metric_files(ball_history_file: str,
@@ -548,7 +600,7 @@ def run_benchmark_matrix(args) -> int:
     csv_dir = os.path.dirname(result_csv) or "."
     os.makedirs(csv_dir, exist_ok=True)
     with open(result_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
     log_info(f"CSV 已初始化（可实时查看）：{result_csv}")
 
@@ -560,28 +612,35 @@ def run_benchmark_matrix(args) -> int:
     run_count = 0
 
     try:
-        for mode in modes:
-            for avoidance in avoidance_settings:
-                for repeat_idx, seed in enumerate(seed_values, start=1):
+        combos_per_seed = len(avoidance_settings) * len(modes)
+        for repeat_idx, seed in enumerate(seed_values, start=1):
+            log_step(f"开始种子批次 {repeat_idx}/{len(seed_values)}：seed={seed}（将运行 {combos_per_seed} 组）")
+            for avoidance_idx, avoidance in enumerate(avoidance_settings, start=1):
+                log_step(f"开始避障批次 {avoidance_idx}/{len(avoidance_settings)}：avoidance={avoidance}（mode 共 {len(modes)} 组）")
+                for mode_idx, mode in enumerate(modes, start=1):
                     run_count += 1
                     if avoidance.lower() == "off":
                         collision_text = "off\n"
                         avoidance_label = "off"
+                        avoidance_csv_value = "-1"
                     else:
                         collision_text = f"smart_factor = {avoidance}\n"
                         avoidance_label = f"smart_factor={avoidance}"
+                        avoidance_csv_value = str(avoidance)
 
                     print(
-                        f"\n=== [{run_count}/{total_runs}] mode={mode} collision={avoidance_label} "
-                        f"repeat={repeat_idx}/{len(seed_values)} seed={seed} ({datetime.now().isoformat()}) ==="
+                        f"\n=== [{run_count}/{total_runs}] mode={mode} collision={avoidance_label} seed={seed} "
+                        f"mode_batch={mode_idx}/{len(modes)} ({datetime.now().isoformat()}) ==="
                     )
                     log_step(
-                        f"准备测试组合 [{run_count}/{total_runs}]：mode={mode}, collision={avoidance_label}, "
-                        f"repeat={repeat_idx}/{len(seed_values)}, seed={seed}"
+                        f"准备测试组合 [{run_count}/{total_runs}]：mode={mode}, collision={avoidance_label}, seed={seed}, "
+                        f"mode_batch={mode_idx}/{len(modes)}, avoidance_batch={avoidance_idx}/{len(avoidance_settings)}, "
+                        f"seed_batch={repeat_idx}/{len(seed_values)}"
                     )
                     log_info(
                         f"[RUN_CONFIG] mode={mode} × avoidance={avoidance_label} × seed={seed} "
-                        f"(repeat {repeat_idx}/{len(seed_values)}, global {run_count}/{total_runs})"
+                        f"(mode_batch {mode_idx}/{len(modes)}, avoidance_batch {avoidance_idx}/{len(avoidance_settings)}, "
+                        f"seed_batch {repeat_idx}/{len(seed_values)}, global {run_count}/{total_runs})"
                     )
 
                     write_text_file(mode_file, f"{mode}\n")
@@ -622,11 +681,12 @@ def run_benchmark_matrix(args) -> int:
                     log_step("采集本轮结果文件")
                     last_ball_time, total_balls, last_history_line = parse_ball_taken_history_last_line(ball_history_file)
                     collision_count = parse_collision_counter(collision_counter_file)
+                    normalize_collision_counter_file(collision_counter_file, collision_count)
 
                     row = {
                         "run_index": run_count,
                         "mode": mode,
-                        "avoidance": avoidance_label,
+                        "avoidance": avoidance_csv_value,
                         "repeat_index": repeat_idx,
                         "seed": seed,
                         "watch_text_found": found,
@@ -641,10 +701,7 @@ def run_benchmark_matrix(args) -> int:
                     }
                     results.append(row)
 
-                    with open(result_csv, "a", newline="", encoding="utf-8") as f:
-                        writer = csv.DictWriter(f, fieldnames=fieldnames)
-                        writer.writerow(row)
-                        f.flush()
+                    append_csv_row(result_csv, fieldnames, row)
                     log_info("CSV 已追加 1 行")
 
                     log_info(
@@ -700,9 +757,9 @@ def main():
     parser.add_argument("--status-running-values", nargs="*", default=["runnung", "running"], help="状态文件中表示运行中的值列表")
     parser.add_argument("--status-done-values", nargs="*", default=["exited"], help="状态文件中表示结束的值列表")
     parser.add_argument("--random-seed-file", default=DEFAULT_RANDOM_SEED_FILE, help="随机种子文件路径（supervisor_controller/random_seed.txt）")
-    parser.add_argument("--repeats-per-config", type=int, default=20, help="每种 mode+避障 组合重复次数")
+    parser.add_argument("--repeats-per-config", type=int, default=30, help="每种 mode+避障 组合重复次数")
     parser.add_argument("--seed-start", type=int, default=1000, help="随机种子起始值（含）")
-    parser.add_argument("--seed-end", type=int, default=1010, help="随机种子结束值（含）")
+    parser.add_argument("--seed-end", type=int, default=1029, help="随机种子结束值（含）")
     parser.add_argument("--seeds", nargs="*", type=int, default=None, help="显式指定种子列表；提供后优先于 seed-start/seed-end")
     parser.add_argument("--result-csv", default=None, help="矩阵测试结果 CSV 路径（默认 testing/benchmark_results_时间戳.csv）")
     args = parser.parse_args()

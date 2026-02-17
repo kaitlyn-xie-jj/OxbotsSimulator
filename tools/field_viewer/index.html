@@ -168,6 +168,11 @@
         <div class="stat" id="ballStat">Balls: --</div>
         <div class="stat" id="visibleStat">Visible: --</div>
         <div class="stat" id="obsStat">Obstacles: --</div>
+        <div class="stat" id="modeStat">Mode: --</div>
+        <div class="stat" id="collisionAvoidingStat">Collision Avoiding: --</div>
+        <div class="stat" id="randomSeedStat">Random Seed: --</div>
+        <div class="stat" id="collisionCounterStat">Collision Counter: --</div>
+        <div class="stat" id="lastBallTakenStat">Last Ball Taken: --</div>
         <div class="legend">
           <div><span class="chip" style="background: var(--accent)"></span> Robot Front</div>
           <div><span class="chip" style="background: var(--accent-2)"></span> Robot Rear</div>
@@ -207,6 +212,11 @@
       const ballStat = document.getElementById("ballStat");
       const visibleStat = document.getElementById("visibleStat");
       const obsStat = document.getElementById("obsStat");
+      const modeStat = document.getElementById("modeStat");
+      const collisionAvoidingStat = document.getElementById("collisionAvoidingStat");
+      const randomSeedStat = document.getElementById("randomSeedStat");
+      const collisionCounterStat = document.getElementById("collisionCounterStat");
+      const lastBallTakenStat = document.getElementById("lastBallTakenStat");
 
       const COLORS = {
         robot: "#e4572e",
@@ -606,7 +616,7 @@
       }
 
       async function tick() {
-        const [current, balls, visible, obstacles, waypoints, robotAround, radarHistory, tileSeenTime, ballTileMemory, unseenTileMemory, unseenRegions] = await Promise.all([
+        const [current, balls, visible, obstacles, waypoints, robotAround, radarHistory, tileSeenTime, ballTileMemory, unseenTileMemory, unseenRegions, textStatus] = await Promise.all([
           fetchJson("/data/current"),
           fetchJson("/data/balls"),
           fetchJson("/data/visible"),
@@ -617,7 +627,8 @@
           fetchJson("/data/tile-seen-time"),
           fetchJson("/data/ball-tile-memory"),
           fetchJson("/data/unseen-tile-memory"),
-          fetchJson("/data/unseen-regions")
+          fetchJson("/data/unseen-regions"),
+          fetchJson("/data/text-status")
         ]);
 
         const robot = current && current.current ? current.current : null;
@@ -678,6 +689,11 @@
         ballStat.textContent = `Balls: ${ballList.length}`;
         visibleStat.textContent = `Visible: ${visibleList.length}`;
         obsStat.textContent = `Obstacles: ${obstacleList.length}`;
+        modeStat.textContent = `Mode: ${textStatus && textStatus.mode ? textStatus.mode : "--"}`;
+        collisionAvoidingStat.textContent = `Collision Avoiding: ${textStatus && textStatus.collision_avoiding ? textStatus.collision_avoiding : "--"}`;
+        randomSeedStat.textContent = `Random Seed: ${textStatus && textStatus.random_seed ? textStatus.random_seed : "--"}`;
+        collisionCounterStat.textContent = `Collision Counter: ${textStatus && textStatus.collision_counter ? textStatus.collision_counter : "--"}`;
+        lastBallTakenStat.textContent = `Last Ball Taken: ${textStatus && textStatus.last_ball_taken ? textStatus.last_ball_taken : "--"}`;
       }
 
       setInterval(tick, 120);

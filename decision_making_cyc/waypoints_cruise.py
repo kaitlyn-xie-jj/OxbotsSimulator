@@ -234,7 +234,7 @@ def _process_collision_counter_from_history(
     history_file: str = ROBOT_ONLY_RADAR_MEMORY_FILE,
     counter_file: str = COLLISION_COUNTER_FILE,
     state_file: str = COLLISION_COUNTER_STATE_FILE,
-    threshold: float = -0.001,
+    threshold: float = -0.01,
 ) -> None:
     """Count a collision only when distances recover above threshold after being below it."""
     entries: list[tuple[float, list[float]]] = []

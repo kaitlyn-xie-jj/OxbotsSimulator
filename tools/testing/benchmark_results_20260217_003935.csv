@@ -1,3 +1,0 @@
-run_index,mode,avoidance,repeat_index,seed,watch_text_found,last_ball_time,total_balls_taken,collision_count,ball_history_last_line,process_return_code,process_error,started_at,finished_at
-1,nearest,off,1,1000,True,38.084,33,,"38.084,33",0,,2026-02-17T00:39:35.584113,2026-02-17T00:40:31.459889
-2,nearest,off,2,1001,True,45.2,25,,"45.200,25",0,,2026-02-17T00:40:32.467918,2026-02-17T00:41:34.314798
